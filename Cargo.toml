@@ -7,7 +7,10 @@ edition = "2021"
 askama = { version = "0.11.2", features = ["with-axum"] }
 askama_axum = "0.1.0"
 axum = "0.5.1"
+chrono = "0.4.19"
+hyper = "0.14.18"
 serde = { version = "1.0.136", features = ["derive"] }
+sqlx = { version = "0.5.11", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
 tokio = { version = "1.17.0", features = ["full"] }
 tower = "0.4.12"
 tower-http = { version = "0.2.5", features = ["trace", "request-id"] }
