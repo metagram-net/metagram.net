@@ -1,0 +1,20 @@
+[package]
+name = "firehose"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+askama = { version = "0.11.2", features = ["with-axum"] }
+askama_axum = "0.1.0"
+axum = "0.5.1"
+serde = { version = "1.0.136", features = ["derive"] }
+tokio = { version = "1.17.0", features = ["full"] }
+tower = "0.4.12"
+tower-http = { version = "0.2.5", features = ["trace", "request-id"] }
+tracing = "0.1.32"
+tracing-subscriber = { version = "0.3.10", features = ["env-filter"] }
+uuid = { version = "0.8.2", features = ["v4"] }
+
+[patch.crates-io]
+askama = { git = 'https://github.com/djc/askama' }
+askama_axum = { git = 'https://github.com/djc/askama' }
