@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block main %}
+<h1>Log in to Firehose</h1>
+
+<form>
+  <p>Sent a link to {{ email }}.</p>
+
+  <p>Look for an email from login@stytch.com.</p>
+
+  <p>Didn't get the email? <a href="/login">Request another one.</a></p>
+</form>
+{% endblock %}

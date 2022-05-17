@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{# TODO: CSRF #}
+{% block main %}
+<h1>Log in to Firehose</h1>
+
+<form method="POST" action="/login">
+  <p>Enter your email to receive a login link.</p>
+
+  <div>
+    <label for="email">Email</label>
+    <input id="email" type="text" name="email" />
+  </div>
+
+  <button type="submit">Log in</button>
+</form>
+{% endblock %}

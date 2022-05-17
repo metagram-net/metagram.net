@@ -1,25 +1,30 @@
+use anyhow;
 use askama::Template;
 use axum::{
-    extract::Extension,
+    extract::{Extension, Form, Query},
     http::{Request, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Redirect, Response},
     routing::get,
     Json, Router,
 };
 use hyper::Body;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
+use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_http::{
     request_id::{MakeRequestId, RequestId},
     trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
-use tracing::{info, span, Level};
+use tracing::Level;
 use uuid::Uuid;
 
+const SESSION_COOKIE_NAME: &str = "firehose_session";
+
+#[allow(unused)]
 #[derive(Debug, sqlx::FromRow)]
 struct User {
     id: uuid::Uuid,
@@ -44,11 +49,19 @@ fn must_env(var: &str) -> String {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let db_url = must_env("DATABASE_URL");
-    let pool = PgPoolOptions::new()
-        .connect(&db_url)
-        .await
-        .expect("database connection");
+    let cookie_key = {
+        let val = must_env("COOKIE_KEY");
+        let key = base64::decode(val).expect("COOKIE_KEY should be valid base64");
+        cookie::Key::from(&key)
+    };
+
+    let pool = {
+        let db_url = must_env("DATABASE_URL");
+        PgPoolOptions::new()
+            .connect(&db_url)
+            .await
+            .expect("database connection")
+    };
 
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(|req: &Request<Body>| {
@@ -58,7 +71,7 @@ async fn main() {
                 Some(val) => val.to_str().unwrap_or(""),
                 None => "",
             };
-            span!(
+            tracing::span!(
                 Level::INFO,
                 "request",
                 method = %req.method(),
@@ -72,6 +85,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/login", get(login).post(login_form))
+        .route("/authenticate", get(authenticate))
         .route("/.well-known/health-check", get(health_check))
         .layer(
             ServiceBuilder::new()
@@ -81,11 +96,14 @@ async fn main() {
                 .layer(trace_layer)
                 .propagate_x_request_id(),
         )
-        .layer(Extension::<PgPool>(pool));
+        .layer(Extension::<PgPool>(pool.clone()))
+        .layer(Extension::<DebugAuth>(DebugAuth { pool }))
+        .layer(Extension::<cookie::Key>(cookie_key))
+        .layer(CookieManagerLayer::new());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
 
-    info!("Listening on http://{}", addr);
+    tracing::info!("Listening on http://{}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
@@ -102,24 +120,6 @@ impl MakeRequestId for MakeRequestUuid {
     }
 }
 
-#[derive(Template)]
-#[template(path = "index.html")]
-struct Index {
-    name: String,
-}
-
-async fn index(Extension(pool): Extension<PgPool>) -> Index {
-    let user: User = sqlx::query_as("select * from users where id = $1")
-        .bind(uuid::Uuid::parse_str(&must_env("LOCAL_USER_ID")).unwrap())
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-    dbg!(&user);
-
-    return Index { name: user.email };
-}
-
 #[derive(Serialize)]
 struct Health {
     status: String,
@@ -130,4 +130,154 @@ async fn health_check() -> impl IntoResponse {
         status: "Ok".to_string(),
     };
     (StatusCode::OK, Json(health))
+}
+
+#[derive(Template)]
+#[template(path = "index.html")]
+struct Index {
+    name: String,
+}
+
+async fn index(
+    Extension(pool): Extension<PgPool>,
+    Extension(cookie_key): Extension<cookie::Key>,
+    cookies: Cookies,
+) -> Index {
+    // TODO: make a SignedCookies layer so this isn't necessary every time
+    let jar = cookies.signed(&cookie_key);
+
+    let user_id = jar.get(SESSION_COOKIE_NAME).and_then(|cookie| {
+        let val = cookie.value();
+        uuid::Uuid::parse_str(val).ok()
+    });
+
+    let user: sqlx::Result<User> = sqlx::query_as("select * from users where id = $1")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await;
+
+    dbg!(&user);
+
+    let name = match user {
+        Ok(user) => user.email,
+        Err(err) => {
+            tracing::error!("{:?}", err);
+            "you".to_string()
+        }
+    };
+
+    Index { name }
+}
+
+#[derive(Template)]
+#[template(path = "login.html")]
+struct Login {}
+
+async fn login() -> Login {
+    return Login {};
+}
+
+#[derive(Deserialize)]
+struct LoginForm {
+    email: String,
+}
+
+async fn login_form(
+    Extension(auth): Extension<DebugAuth>,
+    Form(form): Form<LoginForm>,
+) -> Result<LoginConfirmation, ServerError> {
+    let res = auth.send_challenge(&form.email).await;
+    match res {
+        Ok(id) => {
+            tracing::info!("Sent login link to user {}", id);
+            Ok(LoginConfirmation { email: form.email })
+        }
+        Err(err) => {
+            tracing::error!("Could not send login link: {:?}", err);
+            // TODO: if user error, 400 instead
+            Err(ServerError(err))
+        }
+    }
+}
+
+#[derive(Template)]
+#[template(path = "login_confirmation.html")]
+struct LoginConfirmation {
+    email: String,
+}
+
+#[derive(Template)]
+#[template(path = "500_internal_server_error.html")]
+struct InternalServerError {}
+
+#[derive(Deserialize)]
+struct AuthenticateQuery {
+    token: String,
+}
+
+// TODO: Handle deserialization failure
+
+async fn authenticate(
+    Extension(auth): Extension<DebugAuth>,
+    Extension(cookie_key): Extension<cookie::Key>,
+    cookies: Cookies,
+    Query(query): Query<AuthenticateQuery>,
+) -> Result<Redirect, ServerError> {
+    let user = auth.authenticate_challenge(&query.token).await?;
+    tracing::info!("Successfully authenticated token for user {}", user.id);
+
+    let jar = cookies.signed(&cookie_key);
+    jar.add(
+        Cookie::build(SESSION_COOKIE_NAME, user.id.to_string())
+            .permanent()
+            .secure(true)
+            .finish(),
+    );
+
+    // TODO: Redirect back to intended page.
+    Ok(Redirect::to("/"))
+}
+
+#[derive(Clone)]
+struct DebugAuth {
+    pool: PgPool,
+}
+
+#[allow(unused)]
+impl DebugAuth {
+    async fn send_challenge(self, email_address: &str) -> anyhow::Result<uuid::Uuid> {
+        let user: User = sqlx::query_as("select * from users where email = $1")
+            .bind(email_address)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(user.id)
+    }
+
+    // 2d15aa0b-5bd9-4dea-ab9f-5ba3b0a913c0
+    async fn authenticate_challenge(self, id: &str) -> anyhow::Result<User> {
+        let user: User = sqlx::query_as("select * from users where id = $1")
+            .bind(uuid::Uuid::parse_str(id)?)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(user)
+    }
+}
+
+struct ServerError(anyhow::Error);
+
+impl From<anyhow::Error> for ServerError {
+    fn from(err: anyhow::Error) -> Self {
+        ServerError(err)
+    }
+}
+
+impl IntoResponse for ServerError {
+    fn into_response(self) -> Response {
+        tracing::error!("{:?}", self.0);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Internal server error"),
+        )
+            .into_response()
+    }
 }
