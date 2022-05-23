@@ -55,59 +55,100 @@ async fn main() {
         cookie::Key::from(&key)
     };
 
-    let pool = {
-        let db_url = must_env("DATABASE_URL");
-        PgPoolOptions::new()
-            .connect(&db_url)
-            .await
-            .expect("database connection")
+    let database_url = must_env("DATABASE_URL");
+
+    let config = Config {
+        cookie_key,
+        database_url,
     };
 
-    let trace_layer = TraceLayer::new_for_http()
-        .make_span_with(|req: &Request<Body>| {
-            // Extract _only_ the request ID header. DefaultMakeSpan dumps all the headers, which
-            // is way too much info.
-            let request_id = match req.headers().get("x-request-id") {
-                Some(val) => val.to_str().unwrap_or(""),
-                None => "",
-            };
-            tracing::span!(
-                Level::INFO,
-                "request",
-                method = %req.method(),
-                uri = %req.uri(),
-                version = ?req.version(),
-                %request_id,
-            )
-        })
-        .on_request(DefaultOnRequest::new().level(Level::INFO))
-        .on_response(DefaultOnResponse::new().level(Level::INFO));
-
-    let app = Router::new()
-        .route("/", get(index))
-        .route("/login", get(login).post(login_form))
-        .route("/authenticate", get(authenticate))
-        .route("/.well-known/health-check", get(health_check))
-        .layer(
-            ServiceBuilder::new()
-                // To have request IDs show up in traces, the tracing middleware has to be
-                // _between_ the request_id ones.
-                .set_x_request_id(MakeRequestUuid)
-                .layer(trace_layer)
-                .propagate_x_request_id(),
-        )
-        .layer(Extension::<PgPool>(pool.clone()))
-        .layer(Extension::<DebugAuth>(DebugAuth { pool }))
-        .layer(Extension::<cookie::Key>(cookie_key))
-        .layer(CookieManagerLayer::new());
+    let srv = Server::new(config).await.unwrap();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
+    srv.run(addr).await.unwrap();
+}
 
-    tracing::info!("Listening on http://{}", addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+struct Config {
+    cookie_key: cookie::Key,
+    database_url: String,
+}
+
+struct Server {
+    router: Router,
+}
+
+impl Server {
+    async fn new(config: Config) -> anyhow::Result<Self> {
+        let pool = { PgPoolOptions::new().connect(&config.database_url).await? };
+
+        let router = Router::new()
+            .route("/", get(index))
+            .route("/login", get(login).post(login_form))
+            .route("/authenticate", get(authenticate))
+            .route("/.well-known/health-check", get(health_check));
+
+        let trace_layer = TraceLayer::new_for_http()
+            .make_span_with(|req: &Request<Body>| {
+                // Extract _only_ the request ID header. DefaultMakeSpan dumps all the headers, which
+                // is way too much info.
+                let request_id = match req.headers().get("x-request-id") {
+                    Some(val) => val.to_str().unwrap_or(""),
+                    None => "",
+                };
+                tracing::span!(
+                    Level::INFO,
+                    "request",
+                    method = %req.method(),
+                    uri = %req.uri(),
+                    version = ?req.version(),
+                    %request_id,
+                )
+            })
+            .on_request(DefaultOnRequest::new().level(Level::INFO))
+            .on_response(DefaultOnResponse::new().level(Level::INFO));
+
+        let app = router
+            .layer(
+                ServiceBuilder::new()
+                    // To have request IDs show up in traces, the tracing middleware has to be
+                    // _between_ the request_id ones.
+                    .set_x_request_id(MakeRequestUuid)
+                    .layer(trace_layer)
+                    .propagate_x_request_id(),
+            )
+            .layer(Extension::<PgPool>(pool.clone()))
+            .layer(Extension::<DebugAuth>(DebugAuth { pool }))
+            .layer(Extension::<cookie::Key>(config.cookie_key))
+            .layer(CookieManagerLayer::new());
+
+        Ok(Self { router: app })
+    }
+
+    async fn run(self, addr: SocketAddr) -> hyper::Result<()> {
+        tracing::info!("Listening on http://{}", addr);
+        axum::Server::bind(&addr)
+            .serve(self.router.into_make_service())
+            .await
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+enum AppError {
+    #[error(transparent)]
+    Internal(#[from] anyhow::Error),
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        tracing::error!("{:?}", self);
+
+        use AppError::*;
+        match self {
+            Internal(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -125,11 +166,11 @@ struct Health {
     status: String,
 }
 
-async fn health_check() -> impl IntoResponse {
+async fn health_check() -> Json<Health> {
     let health = Health {
         status: "Ok".to_string(),
     };
-    (StatusCode::OK, Json(health))
+    Json(health)
 }
 
 #[derive(Template)]
@@ -156,12 +197,10 @@ async fn index(
         .fetch_one(&pool)
         .await;
 
-    dbg!(&user);
-
     let name = match user {
         Ok(user) => user.email,
         Err(err) => {
-            tracing::error!("{:?}", err);
+            tracing::error!({?user_id, ?err}, "find user");
             "you".to_string()
         }
     };
@@ -185,7 +224,7 @@ struct LoginForm {
 async fn login_form(
     Extension(auth): Extension<DebugAuth>,
     Form(form): Form<LoginForm>,
-) -> Result<LoginConfirmation, ServerError> {
+) -> Result<LoginConfirmation, AppError> {
     let res = auth.send_challenge(&form.email).await;
     match res {
         Ok(id) => {
@@ -195,7 +234,7 @@ async fn login_form(
         Err(err) => {
             tracing::error!("Could not send login link: {:?}", err);
             // TODO: if user error, 400 instead
-            Err(ServerError(err))
+            Err(AppError::Internal(err))
         }
     }
 }
@@ -222,7 +261,7 @@ async fn authenticate(
     Extension(cookie_key): Extension<cookie::Key>,
     cookies: Cookies,
     Query(query): Query<AuthenticateQuery>,
-) -> Result<Redirect, ServerError> {
+) -> Result<Redirect, AppError> {
     let user = auth.authenticate_challenge(&query.token).await?;
     tracing::info!("Successfully authenticated token for user {}", user.id);
 
@@ -260,24 +299,5 @@ impl DebugAuth {
             .fetch_one(&self.pool)
             .await?;
         Ok(user)
-    }
-}
-
-struct ServerError(anyhow::Error);
-
-impl From<anyhow::Error> for ServerError {
-    fn from(err: anyhow::Error) -> Self {
-        ServerError(err)
-    }
-}
-
-impl IntoResponse for ServerError {
-    fn into_response(self) -> Response {
-        tracing::error!("{:?}", self.0);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Internal server error"),
-        )
-            .into_response()
     }
 }
