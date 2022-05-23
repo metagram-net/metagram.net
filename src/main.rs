@@ -4,7 +4,7 @@ use axum::{
     extract::{Extension, Form, Query},
     http::{Request, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use hyper::Body;
@@ -25,7 +25,7 @@ use uuid::Uuid;
 const SESSION_COOKIE_NAME: &str = "firehose_session";
 
 #[allow(unused)]
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 struct User {
     id: uuid::Uuid,
     email: String,
@@ -84,8 +84,10 @@ impl Server {
         let router = Router::new()
             .route("/", get(index))
             .route("/login", get(login).post(login_form))
+            .route("/logout", post(logout))
             .route("/authenticate", get(authenticate))
             .route("/.well-known/health-check", get(health_check));
+        // TODO: .fallback(not_found) handler
 
         let trace_layer = TraceLayer::new_for_http()
             .make_span_with(|req: &Request<Body>| {
@@ -173,47 +175,71 @@ async fn health_check() -> Json<Health> {
     Json(health)
 }
 
+struct Context {
+    user: Option<User>,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self { user: None }
+    }
+}
+
+#[axum::async_trait]
+impl<B> axum::extract::FromRequest<B> for Context
+where
+    B: Send,
+{
+    type Rejection = AppError;
+
+    async fn from_request(
+        req: &mut axum::extract::RequestParts<B>,
+    ) -> Result<Self, Self::Rejection> {
+        let pool: Extension<PgPool> = Extension::from_request(req)
+            .await
+            .expect("extension: PgPool");
+        let cookie_key: Extension<cookie::Key> = Extension::from_request(req)
+            .await
+            .expect("extension: cookie::Key");
+        let cookies = Cookies::from_request(req).await.expect("layer: Cookies");
+
+        let jar = cookies.signed(&cookie_key);
+        let user_id = jar.get(SESSION_COOKIE_NAME).and_then(|cookie| {
+            let val = cookie.value();
+            uuid::Uuid::parse_str(val).ok()
+        });
+
+        let user: sqlx::Result<User> = sqlx::query_as("select * from users where id = $1")
+            .bind(user_id)
+            .fetch_one(&*pool)
+            .await;
+
+        if let Err(ref err) = user {
+            tracing::error!({ ?user_id, ?err }, "find user");
+        }
+
+        Ok(Self { user: user.ok() })
+    }
+}
+
 #[derive(Template)]
 #[template(path = "index.html")]
 struct Index {
-    name: String,
+    context: Context,
 }
 
-async fn index(
-    Extension(pool): Extension<PgPool>,
-    Extension(cookie_key): Extension<cookie::Key>,
-    cookies: Cookies,
-) -> Index {
-    // TODO: make a SignedCookies layer so this isn't necessary every time
-    let jar = cookies.signed(&cookie_key);
-
-    let user_id = jar.get(SESSION_COOKIE_NAME).and_then(|cookie| {
-        let val = cookie.value();
-        uuid::Uuid::parse_str(val).ok()
-    });
-
-    let user: sqlx::Result<User> = sqlx::query_as("select * from users where id = $1")
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await;
-
-    let name = match user {
-        Ok(user) => user.email,
-        Err(err) => {
-            tracing::error!({?user_id, ?err}, "find user");
-            "you".to_string()
-        }
-    };
-
-    Index { name }
+async fn index(context: Context) -> Index {
+    Index { context }
 }
 
 #[derive(Template)]
 #[template(path = "login.html")]
-struct Login {}
+struct Login {
+    context: Context,
+}
 
-async fn login() -> Login {
-    return Login {};
+async fn login(context: Context) -> Login {
+    Login { context }
 }
 
 #[derive(Deserialize)]
@@ -222,6 +248,7 @@ struct LoginForm {
 }
 
 async fn login_form(
+    context: Context,
     Extension(auth): Extension<DebugAuth>,
     Form(form): Form<LoginForm>,
 ) -> Result<LoginConfirmation, AppError> {
@@ -229,7 +256,10 @@ async fn login_form(
     match res {
         Ok(id) => {
             tracing::info!("Sent login link to user {}", id);
-            Ok(LoginConfirmation { email: form.email })
+            Ok(LoginConfirmation {
+                context,
+                email: form.email,
+            })
         }
         Err(err) => {
             tracing::error!("Could not send login link: {:?}", err);
@@ -242,12 +272,15 @@ async fn login_form(
 #[derive(Template)]
 #[template(path = "login_confirmation.html")]
 struct LoginConfirmation {
+    context: Context,
     email: String,
 }
 
 #[derive(Template)]
 #[template(path = "500_internal_server_error.html")]
-struct InternalServerError {}
+struct InternalServerError {
+    context: Context,
+}
 
 #[derive(Deserialize)]
 struct AuthenticateQuery {
@@ -274,6 +307,18 @@ async fn authenticate(
     );
 
     // TODO: Redirect back to intended page.
+    Ok(Redirect::to("/"))
+}
+
+async fn logout(
+    Extension(cookie_key): Extension<cookie::Key>,
+    cookies: Cookies,
+) -> Result<Redirect, AppError> {
+    let jar = cookies.signed(&cookie_key);
+    jar.remove(Cookie::new(SESSION_COOKIE_NAME, ""));
+
+    // TODO: Revoke session
+
     Ok(Redirect::to("/"))
 }
 

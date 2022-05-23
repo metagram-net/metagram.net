@@ -8,6 +8,18 @@
     {% block head %}{% endblock %}
   </head>
   <body>
+    <nav>
+      <a href="/">Firehose</a>
+
+      {% match context.user %}
+      {% when Some(user) %}
+      <form method="POST" action="/logout">
+        <button type="submit">Log out</button>
+      </form>
+      {% when None %}
+      <a href="/login">Log in</a>
+      {% endmatch %}
+    </nav>
     <main>{% block main %}{% endblock %}</main>
   </body>
 </html>

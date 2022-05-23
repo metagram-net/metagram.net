@@ -3,5 +3,10 @@
 {% block main %}
 <h1>Firehose</h1>
 
-<p>Hello, {{ name }}!</p>
+{% match context.user %}
+{% when Some(user) %}
+<p>Hello, {{ user.email }}!</p>
+{% when None %}
+<p>Hello!</p>
+{% endmatch %}
 {% endblock %}
