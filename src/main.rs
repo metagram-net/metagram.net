@@ -3,20 +3,21 @@ use askama::Template;
 use axum::{
     extract::{Extension, Form, Query},
     http::{Request, StatusCode},
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, IntoResponseParts, Redirect, Response, ResponseParts},
     routing::{get, post},
     Json, Router,
 };
-use hyper::Body;
+use axum_csrf::{CsrfLayer, CsrfToken};
+use axum_extra::extract::PrivateCookieJar;
+use cookie::Cookie;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
-use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_http::{
     request_id::{MakeRequestId, RequestId},
-    trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer},
+    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
 use tracing::Level;
@@ -90,24 +91,17 @@ impl Server {
         // TODO: .fallback(not_found) handler
 
         let trace_layer = TraceLayer::new_for_http()
-            .make_span_with(|req: &Request<Body>| {
-                // Extract _only_ the request ID header. DefaultMakeSpan dumps all the headers, which
-                // is way too much info.
-                let request_id = match req.headers().get("x-request-id") {
-                    Some(val) => val.to_str().unwrap_or(""),
-                    None => "",
-                };
-                tracing::span!(
-                    Level::INFO,
-                    "request",
-                    method = %req.method(),
-                    uri = %req.uri(),
-                    version = ?req.version(),
-                    %request_id,
-                )
-            })
+            .make_span_with(
+                DefaultMakeSpan::new()
+                    .level(Level::INFO)
+                    .include_headers(true),
+            )
             .on_request(DefaultOnRequest::new().level(Level::INFO))
-            .on_response(DefaultOnResponse::new().level(Level::INFO));
+            .on_response(
+                DefaultOnResponse::new()
+                    .level(Level::INFO)
+                    .include_headers(true),
+            );
 
         let app = router
             .layer(
@@ -120,8 +114,8 @@ impl Server {
             )
             .layer(Extension::<PgPool>(pool.clone()))
             .layer(Extension::<DebugAuth>(DebugAuth { pool }))
-            .layer(Extension::<cookie::Key>(config.cookie_key))
-            .layer(CookieManagerLayer::new());
+            .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
+            .layer(CsrfLayer::build().key(config.cookie_key).finish());
 
         Ok(Self { router: app })
     }
@@ -136,6 +130,9 @@ impl Server {
 
 #[derive(thiserror::Error, Debug)]
 enum AppError {
+    #[error("authenticity token mismatch")]
+    CsrfMismatch,
+
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -146,9 +143,8 @@ impl IntoResponse for AppError {
 
         use AppError::*;
         match self {
-            Internal(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
-            }
+            CsrfMismatch => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+            Internal(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
 }
@@ -175,14 +171,12 @@ async fn health_check() -> Json<Health> {
     Json(health)
 }
 
+// TODO: Context -> Session and make everything return (Session, impl IntoResponse)
+
+#[derive(Clone)]
 struct Context {
     user: Option<User>,
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Self { user: None }
-    }
+    csrf_token: CsrfToken,
 }
 
 #[axum::async_trait]
@@ -198,13 +192,14 @@ where
         let pool: Extension<PgPool> = Extension::from_request(req)
             .await
             .expect("extension: PgPool");
-        let cookie_key: Extension<cookie::Key> = Extension::from_request(req)
+        let cookies: PrivateCookieJar<cookie::Key> = PrivateCookieJar::from_request(req)
             .await
-            .expect("extension: cookie::Key");
-        let cookies = Cookies::from_request(req).await.expect("layer: Cookies");
+            .expect("PrivateCookieJar");
+        let csrf_token = CsrfToken::from_request(req)
+            .await
+            .expect("layer: CsrfToken");
 
-        let jar = cookies.signed(&cookie_key);
-        let user_id = jar.get(SESSION_COOKIE_NAME).and_then(|cookie| {
+        let user_id = cookies.get(SESSION_COOKIE_NAME).and_then(|cookie| {
             let val = cookie.value();
             uuid::Uuid::parse_str(val).ok()
         });
@@ -218,7 +213,18 @@ where
             tracing::error!({ ?user_id, ?err }, "find user");
         }
 
-        Ok(Self { user: user.ok() })
+        Ok(Self {
+            user: user.ok(),
+            csrf_token,
+        })
+    }
+}
+
+impl IntoResponseParts for Context {
+    type Error = std::convert::Infallible;
+
+    fn into_response_parts(self, res: ResponseParts) -> Result<ResponseParts, Self::Error> {
+        self.csrf_token.into_response_parts(res)
     }
 }
 
@@ -228,8 +234,8 @@ struct Index {
     context: Context,
 }
 
-async fn index(context: Context) -> Index {
-    Index { context }
+async fn index(context: Context) -> impl IntoResponse {
+    (context.clone(), Index { context })
 }
 
 #[derive(Template)]
@@ -238,12 +244,13 @@ struct Login {
     context: Context,
 }
 
-async fn login(context: Context) -> Login {
-    Login { context }
+async fn login(context: Context) -> impl IntoResponse {
+    (context.clone(), Login { context })
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct LoginForm {
+    authenticity_token: String,
     email: String,
 }
 
@@ -251,15 +258,23 @@ async fn login_form(
     context: Context,
     Extension(auth): Extension<DebugAuth>,
     Form(form): Form<LoginForm>,
-) -> Result<LoginConfirmation, AppError> {
+) -> impl IntoResponse {
+    tracing::debug!("form: {:?}", form);
+    if let Err(_) = context.csrf_token.verify(&form.authenticity_token) {
+        return Err(AppError::CsrfMismatch);
+    }
+
     let res = auth.send_challenge(&form.email).await;
     match res {
         Ok(id) => {
             tracing::info!("Sent login link to user {}", id);
-            Ok(LoginConfirmation {
-                context,
-                email: form.email,
-            })
+            Ok((
+                context.clone(),
+                LoginConfirmation {
+                    context,
+                    email: form.email,
+                },
+            ))
         }
         Err(err) => {
             tracing::error!("Could not send login link: {:?}", err);
@@ -291,15 +306,13 @@ struct AuthenticateQuery {
 
 async fn authenticate(
     Extension(auth): Extension<DebugAuth>,
-    Extension(cookie_key): Extension<cookie::Key>,
-    cookies: Cookies,
+    cookies: PrivateCookieJar,
     Query(query): Query<AuthenticateQuery>,
-) -> Result<Redirect, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let user = auth.authenticate_challenge(&query.token).await?;
     tracing::info!("Successfully authenticated token for user {}", user.id);
 
-    let jar = cookies.signed(&cookie_key);
-    jar.add(
+    let cookies = cookies.add(
         Cookie::build(SESSION_COOKIE_NAME, user.id.to_string())
             .permanent()
             .secure(true)
@@ -307,19 +320,29 @@ async fn authenticate(
     );
 
     // TODO: Redirect back to intended page.
-    Ok(Redirect::to("/"))
+    Ok((cookies, Redirect::to("/")))
+}
+
+#[derive(Deserialize, Debug)]
+struct LogoutForm {
+    authenticity_token: String,
 }
 
 async fn logout(
-    Extension(cookie_key): Extension<cookie::Key>,
-    cookies: Cookies,
-) -> Result<Redirect, AppError> {
-    let jar = cookies.signed(&cookie_key);
-    jar.remove(Cookie::new(SESSION_COOKIE_NAME, ""));
+    context: Context,
+    cookies: PrivateCookieJar,
+    Form(form): Form<LogoutForm>,
+) -> impl IntoResponse {
+    tracing::debug!("form: {:?}", form);
+    if let Err(_) = context.csrf_token.verify(&form.authenticity_token) {
+        return Err(AppError::CsrfMismatch);
+    }
+
+    let cookies = cookies.remove(Cookie::new(SESSION_COOKIE_NAME, ""));
 
     // TODO: Revoke session
 
-    Ok(Redirect::to("/"))
+    Ok((cookies, Redirect::to("/")))
 }
 
 #[derive(Clone)]
@@ -327,7 +350,6 @@ struct DebugAuth {
     pool: PgPool,
 }
 
-#[allow(unused)]
 impl DebugAuth {
     async fn send_challenge(self, email_address: &str) -> anyhow::Result<uuid::Uuid> {
         let user: User = sqlx::query_as("select * from users where email = $1")

@@ -14,6 +14,7 @@
       {% match context.user %}
       {% when Some(user) %}
       <form method="POST" action="/logout">
+        <input type="hidden" name="authenticity_token" value="{{ context.csrf_token.authenticity_token() }}" />
         <button type="submit">Log out</button>
       </form>
       {% when None %}

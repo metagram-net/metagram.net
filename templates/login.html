@@ -5,6 +5,8 @@
 <h1>Log in to Firehose</h1>
 
 <form method="POST" action="/login">
+  <input type="hidden" name="authenticity_token" value="{{ context.csrf_token.authenticity_token() }}" />
+
   <p>Enter your email to receive a login link.</p>
 
   <div>
