@@ -27,4 +27,4 @@ uuid = { version = "0.8.2", features = ["v4"] }
 [patch.crates-io]
 askama = { git = 'https://github.com/djc/askama' }
 askama_axum = { git = 'https://github.com/djc/askama' }
-axum_csrf = { path = "../axum_csrf" }
+axum_csrf = { git = "https://github.com/jdkaplan/AxumCSRF", branch = "builder" }

@@ -1,7 +1,7 @@
 use anyhow;
 use askama::Template;
 use axum::{
-    extract::{Extension, Form, Query},
+    extract::{Extension, Form, Query, RequestParts},
     http::{Request, StatusCode},
     response::{IntoResponse, IntoResponseParts, Redirect, Response, ResponseParts},
     routing::{get, post},
@@ -115,6 +115,11 @@ impl Server {
             .layer(Extension::<PgPool>(pool.clone()))
             .layer(Extension::<DebugAuth>(DebugAuth { pool }))
             .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
+            // This ordering is important! While processing the inbound request, auto_csrf_token
+            // assumes that CsrfLayer has already extracted the authenticity token from the
+            // cookies. When generating the outbound response, order doesn't matter. So keep
+            // auto_csrf_token deeper in the middleware stack.
+            .layer(axum::middleware::from_fn(auto_csrf_token))
             .layer(CsrfLayer::build().key(config.cookie_key).finish());
 
         Ok(Self { router: app })
@@ -126,6 +131,17 @@ impl Server {
             .serve(self.router.into_make_service())
             .await
     }
+}
+
+async fn auto_csrf_token<B: Send>(
+    req: Request<B>,
+    next: axum::middleware::Next<B>,
+) -> impl IntoResponse {
+    let mut parts = RequestParts::new(req);
+    let csrf_token: CsrfToken = parts.extract().await.expect("layer: CsrfToken");
+
+    let req = parts.try_into_request().expect("into request");
+    (csrf_token, next.run(req).await)
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -170,8 +186,6 @@ async fn health_check() -> Json<Health> {
     };
     Json(health)
 }
-
-// TODO: Context -> Session and make everything return (Session, impl IntoResponse)
 
 #[derive(Clone)]
 struct Context {
@@ -235,7 +249,7 @@ struct Index {
 }
 
 async fn index(context: Context) -> impl IntoResponse {
-    (context.clone(), Index { context })
+    Index { context }
 }
 
 #[derive(Template)]
@@ -245,7 +259,7 @@ struct Login {
 }
 
 async fn login(context: Context) -> impl IntoResponse {
-    (context.clone(), Login { context })
+    Login { context }
 }
 
 #[derive(Deserialize, Debug)]
@@ -259,7 +273,6 @@ async fn login_form(
     Extension(auth): Extension<DebugAuth>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
-    tracing::debug!("form: {:?}", form);
     if let Err(_) = context.csrf_token.verify(&form.authenticity_token) {
         return Err(AppError::CsrfMismatch);
     }
@@ -268,13 +281,10 @@ async fn login_form(
     match res {
         Ok(id) => {
             tracing::info!("Sent login link to user {}", id);
-            Ok((
-                context.clone(),
-                LoginConfirmation {
-                    context,
-                    email: form.email,
-                },
-            ))
+            Ok(LoginConfirmation {
+                context,
+                email: form.email,
+            })
         }
         Err(err) => {
             tracing::error!("Could not send login link: {:?}", err);
@@ -333,7 +343,6 @@ async fn logout(
     cookies: PrivateCookieJar,
     Form(form): Form<LogoutForm>,
 ) -> impl IntoResponse {
-    tracing::debug!("form: {:?}", form);
     if let Err(_) = context.csrf_token.verify(&form.authenticity_token) {
         return Err(AppError::CsrfMismatch);
     }

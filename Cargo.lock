@@ -207,6 +207,7 @@ dependencies = [
 [[package]]
 name = "axum_csrf"
 version = "0.3.0"
+source = "git+https://github.com/jdkaplan/AxumCSRF?branch=builder#ecd8bc652819b16ce60018eddd3b3a35e0ffbda5"
 dependencies = [
  "async-trait",
  "axum",
@@ -215,7 +216,6 @@ dependencies = [
  "cookie",
  "rand",
  "time 0.3.9",
- "tracing",
 ]
 
 [[package]]
