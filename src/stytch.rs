@@ -1,8 +1,12 @@
+// Almost all `new` methods are (intentionally) entry points to builders that allow sending the
+// request directly. So this lint is too noisy within this module.
+#![allow(clippy::new_ret_no_self)]
+
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
-pub const LIVE: &'static str = "https://api.stytch.com/v1/";
-pub const TEST: &'static str = "https://test.stytch.com/v1/";
+pub const LIVE: &str = "https://api.stytch.com/v1/";
+pub const TEST: &str = "https://test.stytch.com/v1/";
 
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]

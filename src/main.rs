@@ -1,4 +1,3 @@
-use anyhow;
 use askama::Template;
 use axum::{
     extract::{Extension, Form, Query, RequestParts},
@@ -124,7 +123,7 @@ impl Server {
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
-            .layer(Extension::<PgPool>(pool.clone()))
+            .layer(Extension::<PgPool>(pool))
             .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
             .layer(Extension::<stytch::Client>(stytch_client))
             // This ordering is important! While processing the inbound request, auto_csrf_token
@@ -290,7 +289,7 @@ async fn login_form(
     Extension(auth): Extension<stytch::Client>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
-    if let Err(_) = context.csrf_token.verify(&form.authenticity_token) {
+    if context.csrf_token.verify(&form.authenticity_token).is_err() {
         return Err(AppError::CsrfMismatch);
     }
 
@@ -372,7 +371,7 @@ async fn logout(
     cookies: PrivateCookieJar,
     Form(form): Form<LogoutForm>,
 ) -> impl IntoResponse {
-    if let Err(_) = context.csrf_token.verify(&form.authenticity_token) {
+    if context.csrf_token.verify(&form.authenticity_token).is_err() {
         return Err(AppError::CsrfMismatch);
     }
 
