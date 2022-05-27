@@ -23,6 +23,8 @@ use tower_http::{
 use tracing::Level;
 use uuid::Uuid;
 
+mod stytch;
+
 const SESSION_COOKIE_NAME: &str = "firehose_session";
 
 #[allow(unused)]
@@ -58,7 +60,14 @@ async fn main() {
 
     let database_url = must_env("DATABASE_URL");
 
+    let stytch_config = stytch::Config {
+        env: stytch::TEST.to_string(),
+        project_id: must_env("STYTCH_PROJECT_ID"),
+        secret: must_env("STYTCH_SECRET"),
+    };
+
     let config = Config {
+        stytch_config,
         cookie_key,
         database_url,
     };
@@ -72,6 +81,7 @@ async fn main() {
 struct Config {
     cookie_key: cookie::Key,
     database_url: String,
+    stytch_config: stytch::Config,
 }
 
 struct Server {
@@ -81,6 +91,8 @@ struct Server {
 impl Server {
     async fn new(config: Config) -> anyhow::Result<Self> {
         let pool = { PgPoolOptions::new().connect(&config.database_url).await? };
+
+        let stytch_client = config.stytch_config.client()?;
 
         let router = Router::new()
             .route("/", get(index))
@@ -113,8 +125,8 @@ impl Server {
                     .propagate_x_request_id(),
             )
             .layer(Extension::<PgPool>(pool.clone()))
-            .layer(Extension::<DebugAuth>(DebugAuth { pool }))
             .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
+            .layer(Extension::<stytch::Client>(stytch_client))
             // This ordering is important! While processing the inbound request, auto_csrf_token
             // assumes that CsrfLayer has already extracted the authenticity token from the
             // cookies. When generating the outbound response, order doesn't matter. So keep
@@ -150,6 +162,9 @@ enum AppError {
     CsrfMismatch,
 
     #[error(transparent)]
+    StytchError(#[from] stytch::Error),
+
+    #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
 
@@ -160,6 +175,7 @@ impl IntoResponse for AppError {
         use AppError::*;
         match self {
             CsrfMismatch => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+            StytchError(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             Internal(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
@@ -218,13 +234,14 @@ where
             uuid::Uuid::parse_str(val).ok()
         });
 
+        // TODO: Stytch user ID?
         let user: sqlx::Result<User> = sqlx::query_as("select * from users where id = $1")
             .bind(user_id)
             .fetch_one(&*pool)
             .await;
 
         if let Err(ref err) = user {
-            tracing::error!({ ?user_id, ?err }, "find user");
+            tracing::info!({ ?user_id, ?err }, "could not find user");
         }
 
         Ok(Self {
@@ -270,28 +287,25 @@ struct LoginForm {
 
 async fn login_form(
     context: Context,
-    Extension(auth): Extension<DebugAuth>,
+    Extension(auth): Extension<stytch::Client>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
     if let Err(_) = context.csrf_token.verify(&form.authenticity_token) {
         return Err(AppError::CsrfMismatch);
     }
 
-    let res = auth.send_challenge(&form.email).await;
-    match res {
-        Ok(id) => {
-            tracing::info!("Sent login link to user {}", id);
-            Ok(LoginConfirmation {
-                context,
-                email: form.email,
-            })
-        }
-        Err(err) => {
-            tracing::error!("Could not send login link: {:?}", err);
-            // TODO: if user error, 400 instead
-            Err(AppError::Internal(err))
-        }
-    }
+    let res = stytch::magic_links::email::SendRequest::new(form.email.clone())
+        .login_magic_link_url("http://localhost:8000/authenticate")
+        .signup_magic_link_url("http://localhost:8000/authenticate")
+        .build()?
+        .send(&auth)
+        .await?;
+
+    tracing::info!("Sent login link to user {}", res.user_id);
+    Ok(LoginConfirmation {
+        context,
+        email: form.email,
+    })
 }
 
 #[derive(Template)]
@@ -315,22 +329,37 @@ struct AuthenticateQuery {
 // TODO: Handle deserialization failure
 
 async fn authenticate(
-    Extension(auth): Extension<DebugAuth>,
+    Extension(auth): Extension<stytch::Client>,
+    Extension(pool): Extension<PgPool>,
     cookies: PrivateCookieJar,
     Query(query): Query<AuthenticateQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = auth.authenticate_challenge(&query.token).await?;
-    tracing::info!("Successfully authenticated token for user {}", user.id);
+    let res = stytch::magic_links::authenticate(&auth, query.token).await?;
+    tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
-    let cookies = cookies.add(
-        Cookie::build(SESSION_COOKIE_NAME, user.id.to_string())
-            .permanent()
-            .secure(true)
-            .finish(),
-    );
+    let user: sqlx::Result<User> = sqlx::query_as("select * from users where stytch_user_id = $1")
+        .bind(res.user_id.clone())
+        .fetch_one(&pool)
+        .await;
 
-    // TODO: Redirect back to intended page.
-    Ok((cookies, Redirect::to("/")))
+    match user {
+        Ok(user) => {
+            // TODO: Store the Stytch session token instead of local user ID
+            let cookies = cookies.add(
+                Cookie::build(SESSION_COOKIE_NAME, user.id.to_string())
+                    .permanent()
+                    .secure(true)
+                    .finish(),
+            );
+
+            // TODO: Redirect back to intended page.
+            Ok((cookies, Redirect::to("/")).into_response())
+        }
+        Err(err) => {
+            tracing::error!({ stytch_user_id = ?res.user_id, ?err }, "find user by Stytch ID");
+            Ok((StatusCode::BAD_REQUEST, Redirect::to("/login")).into_response())
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -352,28 +381,4 @@ async fn logout(
     // TODO: Revoke session
 
     Ok((cookies, Redirect::to("/")))
-}
-
-#[derive(Clone)]
-struct DebugAuth {
-    pool: PgPool,
-}
-
-impl DebugAuth {
-    async fn send_challenge(self, email_address: &str) -> anyhow::Result<uuid::Uuid> {
-        let user: User = sqlx::query_as("select * from users where email = $1")
-            .bind(email_address)
-            .fetch_one(&self.pool)
-            .await?;
-        Ok(user.id)
-    }
-
-    // 2d15aa0b-5bd9-4dea-ab9f-5ba3b0a913c0
-    async fn authenticate_challenge(self, id: &str) -> anyhow::Result<User> {
-        let user: User = sqlx::query_as("select * from users where id = $1")
-            .bind(uuid::Uuid::parse_str(id)?)
-            .fetch_one(&self.pool)
-            .await?;
-        Ok(user)
-    }
 }
