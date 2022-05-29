@@ -164,7 +164,12 @@ enum AppError {
     StytchError(#[from] stytch::Error),
 
     #[error(transparent)]
-    Internal(#[from] anyhow::Error),
+    Unhandled(#[from] anyhow::Error),
+    // TODO: Define these variants that render real templates:
+    // TODO: InternalServerError(Context)
+    // TODO: NotFound(Context)
+    // TODO: UnprocessableEntity(Context)
+    // TODO: ...
 }
 
 impl IntoResponse for AppError {
@@ -175,7 +180,7 @@ impl IntoResponse for AppError {
         match self {
             CsrfMismatch => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
             StytchError(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            Internal(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            Unhandled(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
 }
@@ -293,12 +298,15 @@ async fn login_form(
         return Err(AppError::CsrfMismatch);
     }
 
-    let res = stytch::magic_links::email::SendRequest::new(form.email.clone())
-        .login_magic_link_url("http://localhost:8000/authenticate")
-        .signup_magic_link_url("http://localhost:8000/authenticate")
-        .build()?
-        .send(&auth)
-        .await?;
+    let res = stytch::magic_links::email::SendRequest {
+        email: form.email.clone(),
+        // TODO: configurable base URL
+        login_magic_link_url: Some("http://localhost:8000/authenticate".to_string()),
+        signup_magic_link_url: Some("http://localhost:8000/authenticate".to_string()),
+        ..Default::default()
+    }
+    .send(&auth)
+    .await?;
 
     tracing::info!("Sent login link to user {}", res.user_id);
     Ok(LoginConfirmation {
@@ -333,7 +341,12 @@ async fn authenticate(
     cookies: PrivateCookieJar,
     Query(query): Query<AuthenticateQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let res = stytch::magic_links::authenticate(&auth, query.token).await?;
+    let res = stytch::magic_links::AuthenticateRequest {
+        token: query.token,
+        ..Default::default()
+    }
+    .send(&auth)
+    .await?;
     tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
     let user: sqlx::Result<User> = sqlx::query_as("select * from users where stytch_user_id = $1")

@@ -13,7 +13,6 @@ axum_csrf = "0.4.0"
 base64 = "0.13.0"
 chrono = "0.4.19"
 cookie = { version = "0.16.0", features = ["private"] }
-derive_builder = "0.11.2"
 http = "0.2.7"
 http-serde = "1.1.0"
 hyper = "0.14.18"
