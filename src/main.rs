@@ -1,6 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Extension, Form, Query, RequestParts},
+    handler::Handler,
     http::{Request, StatusCode},
     response::{IntoResponse, IntoResponseParts, Redirect, Response, ResponseParts},
     routing::{get, post},
@@ -98,8 +99,9 @@ impl Server {
             .route("/login", get(login).post(login_form))
             .route("/logout", post(logout))
             .route("/authenticate", get(authenticate))
-            .route("/.well-known/health-check", get(health_check));
-        // TODO: .fallback(not_found) handler
+            .route("/.well-known/health-check", get(health_check))
+            .fallback(not_found.into_service());
+        // TODO: Maybe I need to mount the app server on a whole fallback server?
 
         let trace_layer = TraceLayer::new_for_http()
             .make_span_with(
@@ -155,6 +157,8 @@ async fn auto_csrf_token<B: Send>(
     (csrf_token, next.run(req).await)
 }
 
+// TODO: thiserror + Context for rendering is :(
+
 #[derive(thiserror::Error, Debug)]
 enum AppError {
     #[error("authenticity token mismatch")]
@@ -167,7 +171,6 @@ enum AppError {
     Unhandled(#[from] anyhow::Error),
     // TODO: Define these variants that render real templates:
     // TODO: InternalServerError(Context)
-    // TODO: NotFound(Context)
     // TODO: UnprocessableEntity(Context)
     // TODO: ...
 }
@@ -326,6 +329,16 @@ struct LoginConfirmation {
 #[template(path = "500_internal_server_error.html")]
 struct InternalServerError {
     context: Context,
+}
+
+#[derive(Template)]
+#[template(path = "404_not_found.html")]
+struct NotFound {
+    context: Context,
+}
+
+async fn not_found(context: Context) -> impl IntoResponse {
+    NotFound { context }
 }
 
 #[derive(Deserialize)]
