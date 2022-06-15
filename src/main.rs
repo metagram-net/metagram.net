@@ -16,12 +16,10 @@ use std::env;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::{
-    request_id::{MakeRequestId, RequestId},
     trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
 use tracing::Level;
-use uuid::Uuid;
 
 mod stytch;
 
@@ -121,7 +119,7 @@ impl Server {
                 ServiceBuilder::new()
                     // To have request IDs show up in traces, the tracing middleware has to be
                     // _between_ the request_id ones.
-                    .set_x_request_id(MakeRequestUuid)
+                    .set_x_request_id(tower_http::request_id::MakeRequestUuid)
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
@@ -185,16 +183,6 @@ impl IntoResponse for AppError {
             StytchError(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             Unhandled(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
-    }
-}
-
-#[derive(Clone, Copy)]
-struct MakeRequestUuid;
-
-impl MakeRequestId for MakeRequestUuid {
-    fn make_request_id<B>(&mut self, _request: &Request<B>) -> Option<RequestId> {
-        let request_id = Uuid::new_v4().to_string().parse().unwrap();
-        Some(RequestId::new(request_id))
     }
 }
 
