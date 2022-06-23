@@ -10,6 +10,7 @@ use axum::{
 use axum_csrf::{CsrfLayer, CsrfToken};
 use axum_extra::extract::PrivateCookieJar;
 use cookie::Cookie;
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::env;
@@ -98,8 +99,9 @@ impl Server {
             .route("/logout", post(logout))
             .route("/authenticate", get(authenticate))
             .route("/.well-known/health-check", get(health_check))
+            .route("/whoops/500", get(whoops_500))
+            .route("/whoops/422", get(whoops_422))
             .fallback(not_found.into_service());
-        // TODO: Maybe I need to mount the app server on a whole fallback server?
 
         let trace_layer = TraceLayer::new_for_http()
             .make_span_with(
@@ -155,8 +157,6 @@ async fn auto_csrf_token<B: Send>(
     (csrf_token, next.run(req).await)
 }
 
-// TODO: thiserror + Context for rendering is :(
-
 #[derive(thiserror::Error, Debug)]
 enum AppError {
     #[error("authenticity token mismatch")]
@@ -167,23 +167,6 @@ enum AppError {
 
     #[error(transparent)]
     Unhandled(#[from] anyhow::Error),
-    // TODO: Define these variants that render real templates:
-    // TODO: InternalServerError(Context)
-    // TODO: UnprocessableEntity(Context)
-    // TODO: ...
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        tracing::error!("{:?}", self);
-
-        use AppError::*;
-        match self {
-            CsrfMismatch => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
-            StytchError(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            Unhandled(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -198,10 +181,44 @@ async fn health_check() -> Json<Health> {
     Json(health)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 struct Context {
     user: Option<User>,
+    #[derivative(Debug = "ignore")]
     csrf_token: CsrfToken,
+    request_id: Option<String>,
+}
+
+impl Context {
+    fn error(self, err: AppError) -> Response {
+        tracing::error!("{:?}", err);
+
+        use AppError::*;
+        match err {
+            CsrfMismatch => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                UnprocessableEntity { context: self },
+            )
+                .into_response(),
+            StytchError(err) => {
+                tracing::error!({ ?err }, "stytch error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    InternalServerError { context: self },
+                )
+                    .into_response()
+            }
+            Unhandled(err) => {
+                tracing::error!({ ?err }, "unhandled error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    InternalServerError { context: self },
+                )
+                    .into_response()
+            }
+        }
+    }
 }
 
 #[axum::async_trait]
@@ -209,7 +226,7 @@ impl<B> axum::extract::FromRequest<B> for Context
 where
     B: Send,
 {
-    type Rejection = AppError;
+    type Rejection = std::convert::Infallible;
 
     async fn from_request(
         req: &mut axum::extract::RequestParts<B>,
@@ -239,9 +256,16 @@ where
             tracing::info!({ ?user_id, ?err }, "could not find user");
         }
 
+        let request_id = req
+            .headers()
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
         Ok(Self {
             user: user.ok(),
             csrf_token,
+            request_id,
         })
     }
 }
@@ -286,18 +310,20 @@ async fn login_form(
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(AppError::CsrfMismatch);
+        return Err(context.error(AppError::CsrfMismatch));
     }
 
-    let res = stytch::magic_links::email::SendRequest {
+    let req = stytch::magic_links::email::SendRequest {
         email: form.email.clone(),
         // TODO: configurable base URL
         login_magic_link_url: Some("http://localhost:8000/authenticate".to_string()),
         signup_magic_link_url: Some("http://localhost:8000/authenticate".to_string()),
         ..Default::default()
-    }
-    .send(&auth)
-    .await?;
+    };
+    let res = match req.send(&auth).await {
+        Ok(res) => res,
+        Err(err) => return Err(context.error(err.into())),
+    };
 
     tracing::info!("Sent login link to user {}", res.user_id);
     Ok(LoginConfirmation {
@@ -320,6 +346,12 @@ struct InternalServerError {
 }
 
 #[derive(Template)]
+#[template(path = "422_unprocessable_entity.html")]
+struct UnprocessableEntity {
+    context: Context,
+}
+
+#[derive(Template)]
 #[template(path = "404_not_found.html")]
 struct NotFound {
     context: Context,
@@ -337,17 +369,20 @@ struct AuthenticateQuery {
 // TODO: Handle deserialization failure
 
 async fn authenticate(
+    Extension(context): Extension<Context>,
     Extension(auth): Extension<stytch::Client>,
     Extension(pool): Extension<PgPool>,
     cookies: PrivateCookieJar,
     Query(query): Query<AuthenticateQuery>,
-) -> Result<impl IntoResponse, AppError> {
-    let res = stytch::magic_links::AuthenticateRequest {
+) -> impl IntoResponse {
+    let req = stytch::magic_links::AuthenticateRequest {
         token: query.token,
         ..Default::default()
-    }
-    .send(&auth)
-    .await?;
+    };
+    let res = match req.send(&auth).await {
+        Ok(res) => res,
+        Err(err) => return Err(context.error(err.into())),
+    };
     tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
     let user: sqlx::Result<User> = sqlx::query_as("select * from users where stytch_user_id = $1")
@@ -386,7 +421,7 @@ async fn logout(
     Form(form): Form<LogoutForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(AppError::CsrfMismatch);
+        return Err(context.error(AppError::CsrfMismatch));
     }
 
     let cookies = cookies.remove(Cookie::new(SESSION_COOKIE_NAME, ""));
@@ -394,4 +429,14 @@ async fn logout(
     // TODO: Revoke session
 
     Ok((cookies, Redirect::to("/")))
+}
+
+async fn whoops_500(context: Context) -> Response {
+    let err = anyhow::anyhow!("Hold my beverage!");
+    context.error(err.into())
+}
+
+async fn whoops_422(context: Context) -> Response {
+    let err = AppError::CsrfMismatch;
+    context.error(err)
 }
