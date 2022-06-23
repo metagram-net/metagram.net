@@ -1,10 +1,8 @@
-// Almost all `new` methods are (intentionally) entry points to builders that allow sending the
-// request directly. So this lint is too noisy within this module.
-#![allow(clippy::new_ret_no_self)]
-
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
+// This won't be dead code when the module becomes its own crate.
+#[allow(dead_code)]
 pub const LIVE: &str = "https://api.stytch.com/v1/";
 pub const TEST: &str = "https://test.stytch.com/v1/";
 
@@ -111,6 +109,17 @@ pub struct User {}
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Session {}
 
+macro_rules! route {
+    ( $method:expr, $path:literal, $Req:ty, $Res:ty ) => {
+        impl $Req {
+            pub async fn send(self, client: &Client) -> Result<$Res> {
+                let req = client.request($method, $path)?.json(&self);
+                crate::stytch::send(req).await
+            }
+        }
+    };
+}
+
 pub mod magic_links {
     use super::{Client, Result};
     use serde::{Deserialize, Serialize};
@@ -121,16 +130,6 @@ pub mod magic_links {
         pub session_duration_minutes: Option<u32>,
         pub session_token: Option<String>,
         pub session_jwt: Option<String>,
-    }
-
-    impl AuthenticateRequest {
-        // TODO: Derive this with a macro!
-        pub async fn send(self, client: &Client) -> Result<AuthenticateResponse> {
-            let req = client
-                .request(http::Method::POST, "magic_links/authenticate")?
-                .json(&self);
-            crate::stytch::send(req).await
-        }
     }
 
     #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -146,6 +145,13 @@ pub mod magic_links {
         pub session_jwt: String,
     }
 
+    route!(
+        http::Method::POST,
+        "magic_links/authenticate",
+        AuthenticateRequest,
+        AuthenticateResponse
+    );
+
     pub mod email {
         use crate::stytch::{Client, Result};
         use serde::{Deserialize, Serialize};
@@ -159,16 +165,6 @@ pub mod magic_links {
             pub signup_expiration_minutes: Option<u32>,
         }
 
-        impl SendRequest {
-            // TODO: Derive this with a macro!
-            pub async fn send(self, client: &Client) -> Result<SendResponse> {
-                let req = client
-                    .request(http::Method::POST, "magic_links/email/send")?
-                    .json(&self);
-                crate::stytch::send(req).await
-            }
-        }
-
         #[derive(Serialize, Deserialize, Debug, Clone)]
         pub struct SendResponse {
             #[serde(with = "http_serde::status_code")]
@@ -178,5 +174,12 @@ pub mod magic_links {
             pub user_id: String,
             pub email_id: String,
         }
+
+        route!(
+            http::Method::POST,
+            "magic_links/email/send",
+            SendRequest,
+            SendResponse
+        );
     }
 }
