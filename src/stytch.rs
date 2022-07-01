@@ -101,13 +101,60 @@ pub struct ErrorResponse {
     pub error_url: String,
 }
 
+type Timestamp = chrono::DateTime<chrono::Utc>;
+
 // TODO: User
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct User {}
 
-// TODO: Session
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Session {}
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    pub session_id: String,
+    pub user_id: String,
+
+    pub authentication_factors: Vec<AuthenticationFactor>,
+
+    pub started_at: Timestamp,
+    pub expires_at: Timestamp,
+    pub last_accessed_at: Timestamp,
+
+    pub attributes: Attributes,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticationFactor {
+    pub delivery_method: String,
+    pub r#type: String,
+    pub last_authenticated_at: Timestamp,
+
+    #[serde(flatten)]
+    factor: Factor,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum Factor {
+    #[serde(rename = "email_factor")]
+    Email {
+        #[serde(rename = "email_id")]
+        id: String,
+        #[serde(rename = "email_address")]
+        address: String,
+    },
+    #[serde(rename = "phone_number_factor")]
+    PhoneNumber {
+        #[serde(rename = "phone_id")]
+        id: String,
+        #[serde(rename = "phone_number")]
+        number: String,
+    },
+    // TODO: Fill in other factor variants
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Attributes {
+    ip_address: String,
+    user_agent: String,
+}
 
 macro_rules! route {
     ( $method:expr, $path:literal, $Req:ty, $Res:ty ) => {
@@ -181,5 +228,68 @@ pub mod magic_links {
             SendRequest,
             SendResponse
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn timestamp(s: &str) -> anyhow::Result<Timestamp> {
+        Ok(chrono::DateTime::parse_from_rfc3339(s)?.with_timezone(&chrono::Utc))
+    }
+
+    #[test]
+    fn deserialize_session() -> anyhow::Result<()> {
+        let data = r#"
+{
+  "attributes": {
+    "ip_address": "203.0.113.1",
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"
+  },
+  "authentication_factors": [
+    {
+      "delivery_method": "email",
+      "email_factor": {
+        "email_address": "sandbox@stytch.com",
+        "email_id": "email-test-81bf03a8-86e1-4d95-bd44-bb3495224953"
+      },
+      "last_authenticated_at": "2021-08-09T07:41:52Z",
+      "type": "magic_link"
+    }
+  ],
+  "expires_at": "2021-08-10T07:41:52Z",
+  "last_accessed_at": "2021-08-09T07:41:52Z",
+  "session_id": "session-test-fe6c042b-6286-479f-8a4f-b046a6c46509",
+  "started_at": "2021-08-09T07:41:52Z",
+  "user_id": "user-test-16d9ba61-97a1-4ba4-9720-b03761dc50c6"
+}
+        "#;
+        let session: Session = serde_json::from_str(data)?;
+
+        let expected = Session {
+            attributes: Attributes{
+                ip_address: "203.0.113.1".to_string(),
+                user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36".to_string()
+            },
+            authentication_factors: vec![
+                AuthenticationFactor{
+                    delivery_method: "email".to_string(),
+                    factor: Factor::Email{
+                        address: "sandbox@stytch.com".to_string(),
+                        id: "email-test-81bf03a8-86e1-4d95-bd44-bb3495224953".to_string()
+                    },
+                    last_authenticated_at: timestamp("2021-08-09T07:41:52Z")?,
+                    r#type: "magic_link".to_string()
+                }
+            ],
+            expires_at: timestamp("2021-08-10T07:41:52Z")?,
+            last_accessed_at: timestamp("2021-08-09T07:41:52Z")?,
+            session_id: "session-test-fe6c042b-6286-479f-8a4f-b046a6c46509".to_string(),
+            started_at: timestamp("2021-08-09T07:41:52Z")?,
+            user_id: "user-test-16d9ba61-97a1-4ba4-9720-b03761dc50c6".to_string(),
+};
+        assert_eq!(session, expected);
+        Ok(())
     }
 }

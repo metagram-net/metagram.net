@@ -366,8 +366,6 @@ struct AuthenticateQuery {
     token: String,
 }
 
-// TODO: Handle deserialization failure
-
 async fn authenticate(
     Extension(context): Extension<Context>,
     Extension(auth): Extension<stytch::Client>,
