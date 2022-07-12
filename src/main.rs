@@ -1,4 +1,5 @@
 use askama::Template;
+use async_trait::async_trait;
 use axum::{
     extract::{Extension, Form, Query, RequestParts},
     handler::Handler,
@@ -13,8 +14,8 @@ use cookie::Cookie;
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
-use std::env;
 use std::net::SocketAddr;
+use std::{env, sync::Arc};
 use tower::ServiceBuilder;
 use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
@@ -65,10 +66,15 @@ async fn main() {
         secret: must_env("STYTCH_SECRET"),
     };
 
+    let base_url = must_env("BASE_URL")
+        .parse()
+        .expect("BASE_URL should be a valid URL");
+
     let config = Config {
         stytch_config,
         cookie_key,
         database_url,
+        base_url,
     };
 
     let srv = Server::new(config).await.unwrap();
@@ -81,11 +87,23 @@ struct Config {
     cookie_key: cookie::Key,
     database_url: String,
     stytch_config: stytch::Config,
+    base_url: url::Url,
 }
 
 struct Server {
     router: Router,
 }
+
+#[derive(Debug, Clone)]
+struct BaseUrl(url::Url);
+
+#[derive(Debug, Clone)]
+struct StytchAuth {
+    client: stytch::Client,
+    redirect_target: url::Url,
+}
+
+type Auth = Arc<dyn AuthN + Send + Sync>;
 
 impl Server {
     async fn new(config: Config) -> anyhow::Result<Self> {
@@ -116,6 +134,11 @@ impl Server {
                     .include_headers(true),
             );
 
+        let auth_client = StytchAuth {
+            client: stytch_client,
+            redirect_target: config.base_url.join("authenticate")?,
+        };
+
         let app = router
             .layer(
                 ServiceBuilder::new()
@@ -127,11 +150,13 @@ impl Server {
             )
             .layer(Extension::<PgPool>(pool))
             .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
-            .layer(Extension::<stytch::Client>(stytch_client))
+            .layer(Extension::<Auth>(Arc::new(auth_client)))
             // This ordering is important! While processing the inbound request, auto_csrf_token
             // assumes that CsrfLayer has already extracted the authenticity token from the
             // cookies. When generating the outbound response, order doesn't matter. So keep
             // auto_csrf_token deeper in the middleware stack.
+            //
+            // TODO: Could this become CsrfLayer's job?
             .layer(axum::middleware::from_fn(auto_csrf_token))
             .layer(CsrfLayer::build().key(config.cookie_key).finish());
 
@@ -306,21 +331,14 @@ struct LoginForm {
 
 async fn login_form(
     context: Context,
-    Extension(auth): Extension<stytch::Client>,
+    Extension(auth): Extension<Auth>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
         return Err(context.error(AppError::CsrfMismatch));
     }
 
-    let req = stytch::magic_links::email::SendRequest {
-        email: form.email.clone(),
-        // TODO: configurable base URL
-        login_magic_link_url: Some("http://localhost:8000/authenticate".to_string()),
-        signup_magic_link_url: Some("http://localhost:8000/authenticate".to_string()),
-        ..Default::default()
-    };
-    let res = match req.send(&auth).await {
+    let res = match auth.send_magic_link(form.email.clone()).await {
         Ok(res) => res,
         Err(err) => return Err(context.error(err.into())),
     };
@@ -367,17 +385,13 @@ struct AuthenticateQuery {
 }
 
 async fn authenticate(
-    Extension(context): Extension<Context>,
-    Extension(auth): Extension<stytch::Client>,
-    Extension(pool): Extension<PgPool>,
+    context: Context,
     cookies: PrivateCookieJar,
+    Extension(pool): Extension<PgPool>,
+    Extension(auth): Extension<Auth>,
     Query(query): Query<AuthenticateQuery>,
 ) -> impl IntoResponse {
-    let req = stytch::magic_links::AuthenticateRequest {
-        token: query.token,
-        ..Default::default()
-    };
-    let res = match req.send(&auth).await {
+    let res = match auth.authenticate_magic_link(query.token).await {
         Ok(res) => res,
         Err(err) => return Err(context.error(err.into())),
     };
@@ -437,4 +451,62 @@ async fn whoops_500(context: Context) -> Response {
 async fn whoops_422(context: Context) -> Response {
     let err = AppError::CsrfMismatch;
     context.error(err)
+}
+
+#[mockall::automock]
+#[async_trait]
+trait AuthN {
+    async fn send_magic_link(
+        &self,
+        email: String,
+    ) -> stytch::Result<stytch::magic_links::email::SendResponse>;
+
+    async fn authenticate_magic_link(
+        &self,
+        token: String,
+    ) -> stytch::Result<stytch::magic_links::AuthenticateResponse>;
+}
+
+#[async_trait]
+impl AuthN for StytchAuth {
+    async fn send_magic_link(
+        &self,
+        email: String,
+    ) -> stytch::Result<stytch::magic_links::email::SendResponse> {
+        let req = stytch::magic_links::email::SendRequest {
+            email,
+            login_magic_link_url: Some(self.redirect_target.to_string()),
+            signup_magic_link_url: Some(self.redirect_target.to_string()),
+            ..Default::default()
+        };
+        req.send(self.client.clone()).await
+    }
+
+    async fn authenticate_magic_link(
+        &self,
+        token: String,
+    ) -> stytch::Result<stytch::magic_links::AuthenticateResponse> {
+        let req = stytch::magic_links::AuthenticateRequest {
+            token,
+            ..Default::default()
+        };
+        req.send(self.client.clone()).await
+    }
+}
+
+#[allow(unused)]
+fn mock_auth() -> MockAuthN {
+    use mockall::predicate as p;
+    let mut mock = MockAuthN::new();
+    mock.expect_send_magic_link()
+        .with(p::eq("jdkaplan@metagram.net".to_string()))
+        .returning(|_| {
+            Ok(stytch::magic_links::email::SendResponse {
+                status_code: http::StatusCode::OK,
+                request_id: "mock-request".to_string(),
+                user_id: "74fba03a-0c9a-4f86-b255-549e479821cf".to_string(),
+                email_id: "todo!".to_string(),
+            })
+        });
+    mock
 }

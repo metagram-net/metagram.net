@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+use derivative::Derivative;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
@@ -22,7 +24,7 @@ pub enum Error {
     ReqwestError(#[from] reqwest::Error),
 }
 
-type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone)]
 pub struct Config {
@@ -37,8 +39,10 @@ impl Config {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct Client {
+    #[derivative(Debug = "ignore")]
     client: reqwest::Client,
     base_url: Url,
 }
@@ -66,27 +70,30 @@ impl Client {
 
         Ok(Self { client, base_url })
     }
+}
 
-    pub fn request(&self, method: http::Method, path: &str) -> Result<reqwest::RequestBuilder> {
+#[async_trait]
+impl Sender for Client {
+    fn request(&self, method: http::Method, path: &str) -> Result<reqwest::RequestBuilder> {
         let url = self.base_url.join(path)?;
         Ok(self.client.request(method, url))
     }
-}
 
-pub async fn send<T>(req: reqwest::RequestBuilder) -> Result<T>
-where
-    T: DeserializeOwned + std::fmt::Debug,
-{
-    tracing::debug!({ req = ?req }, "send Stytch request");
-    let res = req.send().await?;
-    if res.status().is_success() {
-        let body = res.json().await?;
-        tracing::debug!({ ?body }, "Stytch response success");
-        Ok(body)
-    } else {
-        let err = res.json::<ErrorResponse>().await?;
-        tracing::debug!({ ?err }, "Stytch response error");
-        Err(Error::Response(err))
+    async fn send<T>(&self, req: reqwest::RequestBuilder) -> Result<T>
+    where
+        T: DeserializeOwned + std::fmt::Debug,
+    {
+        tracing::debug!({ req = ?req }, "send Stytch request");
+        let res = req.send().await?;
+        if res.status().is_success() {
+            let body = res.json().await?;
+            tracing::debug!({ ?body }, "Stytch response success");
+            Ok(body)
+        } else {
+            let err = res.json::<ErrorResponse>().await?;
+            tracing::debug!({ ?err }, "Stytch response error");
+            Err(Error::Response(err))
+        }
     }
 }
 
@@ -156,19 +163,30 @@ pub struct Attributes {
     user_agent: String,
 }
 
+#[async_trait]
+pub trait Sender {
+    /// Start building a request with the method and path.
+    fn request(&self, method: http::Method, path: &str) -> Result<reqwest::RequestBuilder>;
+
+    /// Send the built request and deserialize the response.
+    async fn send<T>(&self, req: reqwest::RequestBuilder) -> Result<T>
+    where
+        T: DeserializeOwned + std::fmt::Debug;
+}
+
 macro_rules! route {
     ( $method:expr, $path:literal, $Req:ty, $Res:ty ) => {
         impl $Req {
-            pub async fn send(self, client: &Client) -> Result<$Res> {
+            pub async fn send(self, client: impl crate::stytch::Sender) -> Result<$Res> {
                 let req = client.request($method, $path)?.json(&self);
-                crate::stytch::send(req).await
+                client.send(req).await
             }
         }
     };
 }
 
 pub mod magic_links {
-    use super::{Client, Result};
+    use super::Result;
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -200,7 +218,7 @@ pub mod magic_links {
     );
 
     pub mod email {
-        use crate::stytch::{Client, Result};
+        use crate::stytch::Result;
         use serde::{Deserialize, Serialize};
 
         #[derive(Serialize, Deserialize, Debug, Clone, Default)]
