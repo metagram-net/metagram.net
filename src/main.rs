@@ -15,7 +15,7 @@ use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::net::SocketAddr;
-use std::{env, sync::Arc};
+use std::sync::Arc;
 use tower::ServiceBuilder;
 use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
@@ -26,6 +26,20 @@ use tracing::Level;
 mod stytch;
 
 const SESSION_COOKIE_NAME: &str = "firehose_session";
+
+#[derive(Deserialize, Debug)]
+struct Config {
+    cookie_key: String,
+    database_url: String,
+    base_url: String,
+
+    #[serde(default)]
+    mock_auth: bool,
+
+    stytch_env: stytch::Env,
+    stytch_project_id: String,
+    stytch_secret: String,
+}
 
 #[allow(unused)]
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -44,50 +58,63 @@ struct User {
     unconfirmed_email: Option<String>,
 }
 
-fn must_env(var: &str) -> String {
-    env::var(var).expect(var)
-}
-
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
+    let config = match envy::from_env::<Config>() {
+        Ok(settings) => settings,
+        Err(err) => panic!("{:#?}", err),
+    };
+
     let cookie_key = {
-        let val = must_env("COOKIE_KEY");
-        let key = base64::decode(val).expect("COOKIE_KEY should be valid base64");
+        let key = base64::decode(config.cookie_key).expect("COOKIE_KEY should be valid base64");
         cookie::Key::from(&key)
     };
 
-    let database_url = must_env("DATABASE_URL");
+    let auth: Auth = {
+        if config.mock_auth {
+            Arc::new(mock_auth())
+        } else {
+            let stytch_config = stytch::Config {
+                env: config.stytch_env,
+                project_id: config.stytch_project_id,
+                secret: config.stytch_secret,
+            };
 
-    let stytch_config = stytch::Config {
-        env: stytch::TEST.to_string(),
-        project_id: must_env("STYTCH_PROJECT_ID"),
-        secret: must_env("STYTCH_SECRET"),
+            let base_url: url::Url = config
+                .base_url
+                .parse()
+                .expect("BASE_URL should be a valid URL");
+
+            Arc::new(StytchAuth {
+                client: stytch_config.client().expect("Stytch client"),
+                redirect_target: base_url.join("authenticate").expect("redirect_target"),
+            })
+        }
     };
 
-    let base_url = must_env("BASE_URL")
-        .parse()
-        .expect("BASE_URL should be a valid URL");
+    let database_pool = PgPoolOptions::new()
+        .connect(&config.database_url)
+        .await
+        .expect("database_pool");
 
-    let config = Config {
-        stytch_config,
+    let srv = Server::new(ServerConfig {
+        auth,
         cookie_key,
-        database_url,
-        base_url,
-    };
-
-    let srv = Server::new(config).await.unwrap();
+        database_pool,
+    })
+    .await
+    .unwrap();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
     srv.run(addr).await.unwrap();
 }
 
-struct Config {
+struct ServerConfig {
     cookie_key: cookie::Key,
-    database_url: String,
-    stytch_config: stytch::Config,
-    base_url: url::Url,
+    database_pool: PgPool,
+    auth: Auth,
 }
 
 struct Server {
@@ -106,11 +133,7 @@ struct StytchAuth {
 type Auth = Arc<dyn AuthN + Send + Sync>;
 
 impl Server {
-    async fn new(config: Config) -> anyhow::Result<Self> {
-        let pool = { PgPoolOptions::new().connect(&config.database_url).await? };
-
-        let stytch_client = config.stytch_config.client()?;
-
+    async fn new(config: ServerConfig) -> anyhow::Result<Self> {
         let router = Router::new()
             .route("/", get(index))
             .route("/login", get(login).post(login_form))
@@ -134,11 +157,6 @@ impl Server {
                     .include_headers(true),
             );
 
-        let auth_client = StytchAuth {
-            client: stytch_client,
-            redirect_target: config.base_url.join("authenticate")?,
-        };
-
         let app = router
             .layer(
                 ServiceBuilder::new()
@@ -148,9 +166,9 @@ impl Server {
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
-            .layer(Extension::<PgPool>(pool))
+            .layer(Extension::<PgPool>(config.database_pool))
             .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
-            .layer(Extension::<Auth>(Arc::new(auth_client)))
+            .layer(Extension::<Auth>(config.auth))
             // This ordering is important! While processing the inbound request, auto_csrf_token
             // assumes that CsrfLayer has already extracted the authenticity token from the
             // cookies. When generating the outbound response, order doesn't matter. So keep
@@ -494,7 +512,6 @@ impl AuthN for StytchAuth {
     }
 }
 
-#[allow(unused)]
 fn mock_auth() -> MockAuthN {
     use mockall::predicate as p;
     let mut mock = MockAuthN::new();

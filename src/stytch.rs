@@ -3,10 +3,48 @@ use derivative::Derivative;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
-// This won't be dead code when the module becomes its own crate.
-#[allow(dead_code)]
-pub const LIVE: &str = "https://api.stytch.com/v1/";
-pub const TEST: &str = "https://test.stytch.com/v1/";
+const LIVE_URL: &str = "https://api.stytch.com/v1/";
+const TEST_URL: &str = "https://test.stytch.com/v1/";
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(from = "String")]
+pub enum Env {
+    Live,
+    Test,
+    Dev(String),
+}
+
+impl From<String> for Env {
+    fn from(s: String) -> Self {
+        return match s.as_str() {
+            "live" => Env::Live,
+            "Live" => Env::Live,
+            "LIVE" => Env::Live,
+            "test" => Env::Test,
+            "Test" => Env::Test,
+            "TEST" => Env::Test,
+            _ => Env::Dev(s),
+        };
+    }
+}
+
+impl Env {
+    fn base_url(self) -> std::result::Result<Url, url::ParseError> {
+        match self {
+            Env::Live => Url::parse(LIVE_URL),
+            Env::Test => Url::parse(TEST_URL),
+            Env::Dev(url) => {
+                // The trailing slash is significant in the base URL. Without it, any later joins
+                // would drop the last path segment.
+                if url.ends_with('/') {
+                    Url::parse(&url)
+                } else {
+                    Url::parse(&(url + "/"))
+                }
+            }
+        }
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
@@ -28,7 +66,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone)]
 pub struct Config {
-    pub env: String,
+    pub env: Env,
     pub project_id: String,
     pub secret: String,
 }
@@ -59,16 +97,10 @@ impl Client {
             .default_headers(headers)
             .build()?;
 
-        // The trailing slash is significant in the base URL. Without it, any later joins would
-        // drop the last path segment.
-        let env = if config.env.ends_with('/') {
-            config.env
-        } else {
-            config.env + "/"
-        };
-        let base_url = Url::parse(&env)?;
-
-        Ok(Self { client, base_url })
+        Ok(Self {
+            client,
+            base_url: config.env.base_url()?,
+        })
     }
 }
 
