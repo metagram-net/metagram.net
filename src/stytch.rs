@@ -281,6 +281,39 @@ pub mod magic_links {
     }
 }
 
+pub mod sessions {
+    use super::Result;
+    use serde::{Deserialize, Serialize};
+    use serde_with::{serde_as, NoneAsEmptyString};
+
+    #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+    pub struct AuthenticateRequest {
+        pub session_duration_minutes: Option<u32>,
+        pub session_token: Option<String>,
+        pub session_jwt: Option<String>,
+    }
+
+    #[serde_as]
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct AuthenticateResponse {
+        #[serde(with = "http_serde::status_code")]
+        pub status_code: http::StatusCode,
+        pub request_id: String,
+
+        pub session: crate::stytch::Session,
+        #[serde_as(as = "NoneAsEmptyString")]
+        pub session_token: Option<String>,
+        pub session_jwt: String,
+    }
+
+    route!(
+        http::Method::POST,
+        "sessions/authenticate",
+        AuthenticateRequest,
+        AuthenticateResponse
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -45,17 +45,59 @@ struct Config {
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct User {
     id: uuid::Uuid,
-    email: String,
-    encrypted_password: String,
-    reset_password_token: Option<String>,
-    reset_password_sent_at: Option<chrono::NaiveDateTime>,
-    remember_created_at: Option<chrono::NaiveDateTime>,
-    created_at: chrono::NaiveDateTime,
-    updated_at: chrono::NaiveDateTime,
-    confirmation_token: Option<String>,
-    confirmed_at: Option<chrono::NaiveDateTime>,
-    confirmation_sent_at: Option<chrono::NaiveDateTime>,
-    unconfirmed_email: Option<String>,
+    // TODO(v0.2): Actually drop the other columns from the table.
+}
+
+async fn find_user(
+    pool: &PgPool,
+    auth: &Auth,
+    cookies: PrivateCookieJar<cookie::Key>,
+) -> anyhow::Result<User> {
+    let session_token = cookies
+        .get(SESSION_COOKIE_NAME)
+        .map(|c| c.value().to_string());
+
+    let session = match session_token {
+        None => return Err(anyhow::anyhow!("no session token in cookie")),
+        Some(session_token) => {
+            let res = auth.authenticate_session(session_token).await?;
+            res.session
+        }
+    };
+
+    let user: sqlx::Result<User> = sqlx::query_as("select * from users where stytch_user_id = $1")
+        .bind(session.user_id)
+        .fetch_one(pool)
+        .await;
+    Ok(user?)
+}
+
+#[axum::async_trait]
+impl<B> axum::extract::FromRequest<B> for User
+where
+    B: Send,
+{
+    type Rejection = Redirect;
+
+    async fn from_request(
+        req: &mut axum::extract::RequestParts<B>,
+    ) -> Result<Self, Self::Rejection> {
+        let pool: Extension<PgPool> = Extension::from_request(req)
+            .await
+            .expect("extension: PgPool");
+        let auth: Extension<Auth> = Extension::from_request(req).await.expect("extension: Auth");
+        let cookies: PrivateCookieJar<cookie::Key> = PrivateCookieJar::from_request(req)
+            .await
+            .expect("PrivateCookieJar");
+
+        match find_user(&*pool, &*auth, cookies).await {
+            Ok(user) => Ok(user),
+            Err(err) => {
+                tracing::error!({ ?err }, "no active session");
+                Err(Redirect::to("/login"))
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -274,30 +316,11 @@ where
     async fn from_request(
         req: &mut axum::extract::RequestParts<B>,
     ) -> Result<Self, Self::Rejection> {
-        let pool: Extension<PgPool> = Extension::from_request(req)
-            .await
-            .expect("extension: PgPool");
-        let cookies: PrivateCookieJar<cookie::Key> = PrivateCookieJar::from_request(req)
-            .await
-            .expect("PrivateCookieJar");
         let csrf_token = CsrfToken::from_request(req)
             .await
             .expect("layer: CsrfToken");
 
-        let user_id = cookies.get(SESSION_COOKIE_NAME).and_then(|cookie| {
-            let val = cookie.value();
-            uuid::Uuid::parse_str(val).ok()
-        });
-
-        // TODO: Stytch user ID?
-        let user: sqlx::Result<User> = sqlx::query_as("select * from users where id = $1")
-            .bind(user_id)
-            .fetch_one(&*pool)
-            .await;
-
-        if let Err(ref err) = user {
-            tracing::info!({ ?user_id, ?err }, "could not find user");
-        }
+        let user = User::from_request(req).await;
 
         let request_id = req
             .headers()
@@ -400,6 +423,7 @@ async fn not_found(context: Context) -> impl IntoResponse {
 #[derive(Deserialize)]
 struct AuthenticateQuery {
     token: String,
+    redirect_path: Option<String>,
 }
 
 async fn authenticate(
@@ -421,17 +445,17 @@ async fn authenticate(
         .await;
 
     match user {
-        Ok(user) => {
-            // TODO: Store the Stytch session token instead of local user ID
-            let cookies = cookies.add(
-                Cookie::build(SESSION_COOKIE_NAME, user.id.to_string())
-                    .permanent()
-                    .secure(true)
-                    .finish(),
-            );
+        Ok(_) => {
+            let cookie = Cookie::build(SESSION_COOKIE_NAME, res.session_token)
+                .permanent()
+                .secure(true)
+                .finish();
 
-            // TODO: Redirect back to intended page.
-            Ok((cookies, Redirect::to("/")).into_response())
+            let redirect = match query.redirect_path {
+                Some(path) => Redirect::to(&path),
+                None => Redirect::to("/"),
+            };
+            Ok((cookies.add(cookie), redirect).into_response())
         }
         Err(err) => {
             tracing::error!({ stytch_user_id = ?res.user_id, ?err }, "find user by Stytch ID");
@@ -483,6 +507,11 @@ trait AuthN {
         &self,
         token: String,
     ) -> stytch::Result<stytch::magic_links::AuthenticateResponse>;
+
+    async fn authenticate_session(
+        &self,
+        token: String,
+    ) -> stytch::Result<stytch::sessions::AuthenticateResponse>;
 }
 
 #[async_trait]
@@ -490,6 +519,7 @@ impl AuthN for StytchAuth {
     async fn send_magic_link(
         &self,
         email: String,
+        // TODO: redirect_path: String
     ) -> stytch::Result<stytch::magic_links::email::SendResponse> {
         let req = stytch::magic_links::email::SendRequest {
             email,
@@ -506,6 +536,19 @@ impl AuthN for StytchAuth {
     ) -> stytch::Result<stytch::magic_links::AuthenticateResponse> {
         let req = stytch::magic_links::AuthenticateRequest {
             token,
+            session_duration_minutes: Some(30),
+            ..Default::default()
+        };
+        req.send(self.client.clone()).await
+    }
+
+    async fn authenticate_session(
+        &self,
+        token: String,
+    ) -> stytch::Result<stytch::sessions::AuthenticateResponse> {
+        let req = stytch::sessions::AuthenticateRequest {
+            session_token: Some(token),
+            session_duration_minutes: Some(30),
             ..Default::default()
         };
         req.send(self.client.clone()).await

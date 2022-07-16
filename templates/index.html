@@ -5,7 +5,7 @@
 
 {% match context.user %}
 {% when Some(user) %}
-<p>Hello, {{ user.email }}!</p>
+<p>Hello! Your user ID is <code>{{ user.id }}</code>.</p>
 {% when None %}
 <p>Hello!</p>
 {% endmatch %}
