@@ -47,11 +47,17 @@ struct User {
     // TODO(v0.2): Actually drop the other columns from the table.
 }
 
-async fn find_user(
+#[derive(Debug, Clone)]
+struct Session {
+    user: User,
+    stytch: stytch::Session,
+}
+
+async fn find_session(
     pool: &PgPool,
     auth: &Auth,
     cookies: PrivateCookieJar<cookie::Key>,
-) -> anyhow::Result<User> {
+) -> anyhow::Result<Session> {
     let session_token = cookies
         .get(SESSION_COOKIE_NAME)
         .map(|c| c.value().to_string());
@@ -64,15 +70,19 @@ async fn find_user(
         }
     };
 
-    let user: sqlx::Result<User> = sqlx::query_as("select * from users where stytch_user_id = $1")
-        .bind(session.user_id)
+    let user: User = sqlx::query_as("select * from users where stytch_user_id = $1")
+        .bind(session.user_id.clone())
         .fetch_one(pool)
-        .await;
-    Ok(user?)
+        .await?;
+
+    Ok(Session {
+        user,
+        stytch: session,
+    })
 }
 
 #[axum::async_trait]
-impl<B> axum::extract::FromRequest<B> for User
+impl<B> axum::extract::FromRequest<B> for Session
 where
     B: Send,
 {
@@ -89,8 +99,8 @@ where
             .await
             .expect("PrivateCookieJar");
 
-        match find_user(&*pool, &*auth, cookies).await {
-            Ok(user) => Ok(user),
+        match find_session(&*pool, &*auth, cookies).await {
+            Ok(session) => Ok(session),
             Err(err) => {
                 tracing::error!({ ?err }, "no active session");
                 Err(Redirect::to("/login"))
@@ -274,8 +284,10 @@ struct Context {
 }
 
 impl Context {
-    fn error(self, user: Option<User>, err: AppError) -> Response {
+    fn error(self, session: Option<Session>, err: AppError) -> Response {
         tracing::error!("{:?}", err);
+
+        let user = session.map(|s| s.user);
 
         use AppError::*;
         match err {
@@ -355,8 +367,11 @@ struct Index {
     user: Option<User>,
 }
 
-async fn index(context: Context, user: Option<User>) -> impl IntoResponse {
-    Index { context, user }
+async fn index(context: Context, session: Option<Session>) -> impl IntoResponse {
+    Index {
+        context,
+        user: session.map(|s| s.user),
+    }
 }
 
 #[derive(Template)]
@@ -366,11 +381,15 @@ struct Login {
     user: Option<User>,
 }
 
-async fn login(context: Context, user: Option<User>) -> impl IntoResponse {
+async fn login(context: Context, session: Option<Session>) -> impl IntoResponse {
     // No need to show the login page if they're already logged in!
-    match user {
-        Some(_) => Redirect::to("/").into_response(),
-        None => Login { context, user }.into_response(),
+    match session.map(|s| s.user) {
+        Some(_user) => Redirect::to("/").into_response(),
+        None => Login {
+            context,
+            user: None,
+        }
+        .into_response(),
     }
 }
 
@@ -382,23 +401,23 @@ struct LoginForm {
 
 async fn login_form(
     context: Context,
-    user: Option<User>,
+    session: Option<Session>,
     Extension(auth): Extension<Auth>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(context.error(user, AppError::CsrfMismatch));
+        return Err(context.error(session, AppError::CsrfMismatch));
     }
 
     let res = match auth.send_magic_link(form.email.clone()).await {
         Ok(res) => res,
-        Err(err) => return Err(context.error(user, err.into())),
+        Err(err) => return Err(context.error(session, err.into())),
     };
 
     tracing::info!("Sent login link to user {}", res.user_id);
     Ok(LoginConfirmation {
         context,
-        user,
+        user: session.map(|s| s.user),
         email: form.email,
     })
 }
@@ -433,8 +452,11 @@ struct NotFound {
     user: Option<User>,
 }
 
-async fn not_found(context: Context, user: Option<User>) -> impl IntoResponse {
-    NotFound { context, user }
+async fn not_found(context: Context, session: Option<Session>) -> impl IntoResponse {
+    NotFound {
+        context,
+        user: session.map(|s| s.user),
+    }
 }
 
 #[derive(Deserialize)]
@@ -445,7 +467,7 @@ struct AuthenticateQuery {
 
 async fn authenticate(
     context: Context,
-    user: Option<User>,
+    session: Option<Session>,
     cookies: PrivateCookieJar,
     Extension(pool): Extension<PgPool>,
     Extension(auth): Extension<Auth>,
@@ -453,7 +475,7 @@ async fn authenticate(
 ) -> impl IntoResponse {
     let res = match auth.authenticate_magic_link(query.token).await {
         Ok(res) => res,
-        Err(err) => return Err(context.error(user, err.into())),
+        Err(err) => return Err(context.error(session, err.into())),
     };
     tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
@@ -489,13 +511,13 @@ struct LogoutForm {
 
 async fn logout(
     context: Context,
-    user: Option<User>,
+    session: Option<Session>,
     cookies: PrivateCookieJar,
     Extension(auth): Extension<Auth>,
     Form(form): Form<LogoutForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(context.error(user, AppError::CsrfMismatch));
+        return Err(context.error(session, AppError::CsrfMismatch));
     }
 
     let session_token = cookies
@@ -506,19 +528,19 @@ async fn logout(
     if let Some(session_token) = session_token {
         match auth.revoke_session(session_token).await {
             Ok(_res) => {
-                // TODO: Log session ID
-                tracing::info!("successfully revoked session");
+                let session_id = session.map(|s| s.stytch.session_id);
+                tracing::info!({ ?session_id }, "successfully revoked session");
             }
             Err(err) => {
-                // TODO: Log session ID
-                tracing::error!({ ?err }, "could not revoke session");
+                let session_id = session.as_ref().map(|s| s.stytch.session_id.clone());
+                tracing::error!({ ?session_id, ?err }, "could not revoke session");
                 // Fail the logout request, which may be surprising.
                 //
                 // By clearing the cookie, the user's browser won't know the session token anymore.
                 // But anyone who _had_ somehow obtained that token would be able to use it until
                 // the session naturally expired. Clicking "Log out" again shouldn't be that much
                 // of an issue in the rare (🤞) case that revocation fails.
-                return Err(context.error(user, err.into()));
+                return Err(context.error(session, err.into()));
             }
         }
     }
@@ -526,14 +548,14 @@ async fn logout(
     Ok((cookies, Redirect::to("/")))
 }
 
-async fn whoops_500(context: Context, user: Option<User>) -> Response {
+async fn whoops_500(context: Context, session: Option<Session>) -> Response {
     let err = anyhow::anyhow!("Hold my beverage!");
-    context.error(user, err.into())
+    context.error(session, err.into())
 }
 
-async fn whoops_422(context: Context, user: Option<User>) -> Response {
+async fn whoops_422(context: Context, session: Option<Session>) -> Response {
     let err = AppError::CsrfMismatch;
-    context.error(user, err)
+    context.error(session, err)
 }
 
 #[mockall::automock]
