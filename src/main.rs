@@ -269,28 +269,33 @@ async fn health_check() -> Json<Health> {
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 struct Context {
-    user: Option<User>,
     #[derivative(Debug = "ignore")]
     csrf_token: CsrfToken,
     request_id: Option<String>,
 }
 
 impl Context {
-    fn error(self, err: AppError) -> Response {
+    fn error(self, user: Option<User>, err: AppError) -> Response {
         tracing::error!("{:?}", err);
 
         use AppError::*;
         match err {
             CsrfMismatch => (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                UnprocessableEntity { context: self },
+                UnprocessableEntity {
+                    context: self,
+                    user,
+                },
             )
                 .into_response(),
             StytchError(err) => {
                 tracing::error!({ ?err }, "stytch error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    InternalServerError { context: self },
+                    InternalServerError {
+                        context: self,
+                        user,
+                    },
                 )
                     .into_response()
             }
@@ -298,7 +303,10 @@ impl Context {
                 tracing::error!({ ?err }, "unhandled error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    InternalServerError { context: self },
+                    InternalServerError {
+                        context: self,
+                        user,
+                    },
                 )
                     .into_response()
             }
@@ -320,8 +328,6 @@ where
             .await
             .expect("layer: CsrfToken");
 
-        let user = User::from_request(req).await;
-
         let request_id = req
             .headers()
             .get("x-request-id")
@@ -329,7 +335,6 @@ where
             .map(|s| s.to_string());
 
         Ok(Self {
-            user: user.ok(),
             csrf_token,
             request_id,
         })
@@ -348,20 +353,26 @@ impl IntoResponseParts for Context {
 #[template(path = "index.html")]
 struct Index {
     context: Context,
+    user: Option<User>,
 }
 
-async fn index(context: Context) -> impl IntoResponse {
-    Index { context }
+async fn index(context: Context, user: Option<User>) -> impl IntoResponse {
+    Index { context, user }
 }
 
 #[derive(Template)]
 #[template(path = "login.html")]
 struct Login {
     context: Context,
+    user: Option<User>,
 }
 
-async fn login(context: Context) -> impl IntoResponse {
-    Login { context }
+async fn login(context: Context, user: Option<User>) -> impl IntoResponse {
+    // No need to show the login page if they're already logged in!
+    match user {
+        Some(_) => Redirect::to("/").into_response(),
+        None => Login { context, user }.into_response(),
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -372,21 +383,23 @@ struct LoginForm {
 
 async fn login_form(
     context: Context,
+    user: Option<User>,
     Extension(auth): Extension<Auth>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(context.error(AppError::CsrfMismatch));
+        return Err(context.error(user, AppError::CsrfMismatch));
     }
 
     let res = match auth.send_magic_link(form.email.clone()).await {
         Ok(res) => res,
-        Err(err) => return Err(context.error(err.into())),
+        Err(err) => return Err(context.error(user, err.into())),
     };
 
     tracing::info!("Sent login link to user {}", res.user_id);
     Ok(LoginConfirmation {
         context,
+        user,
         email: form.email,
     })
 }
@@ -395,6 +408,8 @@ async fn login_form(
 #[template(path = "login_confirmation.html")]
 struct LoginConfirmation {
     context: Context,
+    user: Option<User>,
+
     email: String,
 }
 
@@ -402,22 +417,25 @@ struct LoginConfirmation {
 #[template(path = "500_internal_server_error.html")]
 struct InternalServerError {
     context: Context,
+    user: Option<User>,
 }
 
 #[derive(Template)]
 #[template(path = "422_unprocessable_entity.html")]
 struct UnprocessableEntity {
     context: Context,
+    user: Option<User>,
 }
 
 #[derive(Template)]
 #[template(path = "404_not_found.html")]
 struct NotFound {
     context: Context,
+    user: Option<User>,
 }
 
-async fn not_found(context: Context) -> impl IntoResponse {
-    NotFound { context }
+async fn not_found(context: Context, user: Option<User>) -> impl IntoResponse {
+    NotFound { context, user }
 }
 
 #[derive(Deserialize)]
@@ -428,6 +446,7 @@ struct AuthenticateQuery {
 
 async fn authenticate(
     context: Context,
+    user: Option<User>,
     cookies: PrivateCookieJar,
     Extension(pool): Extension<PgPool>,
     Extension(auth): Extension<Auth>,
@@ -435,7 +454,7 @@ async fn authenticate(
 ) -> impl IntoResponse {
     let res = match auth.authenticate_magic_link(query.token).await {
         Ok(res) => res,
-        Err(err) => return Err(context.error(err.into())),
+        Err(err) => return Err(context.error(user, err.into())),
     };
     tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
@@ -471,11 +490,12 @@ struct LogoutForm {
 
 async fn logout(
     context: Context,
+    user: Option<User>,
     cookies: PrivateCookieJar,
     Form(form): Form<LogoutForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(context.error(AppError::CsrfMismatch));
+        return Err(context.error(user, AppError::CsrfMismatch));
     }
 
     let cookies = cookies.remove(Cookie::new(SESSION_COOKIE_NAME, ""));
@@ -485,14 +505,14 @@ async fn logout(
     Ok((cookies, Redirect::to("/")))
 }
 
-async fn whoops_500(context: Context) -> Response {
+async fn whoops_500(context: Context, user: Option<User>) -> Response {
     let err = anyhow::anyhow!("Hold my beverage!");
-    context.error(err.into())
+    context.error(user, err.into())
 }
 
-async fn whoops_422(context: Context) -> Response {
+async fn whoops_422(context: Context, user: Option<User>) -> Response {
     let err = AppError::CsrfMismatch;
-    context.error(err)
+    context.error(user, err)
 }
 
 #[mockall::automock]

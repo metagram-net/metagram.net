@@ -11,7 +11,7 @@
     <nav>
       <a href="/">Firehose</a>
 
-      {% match context.user %}
+      {% match user %}
       {% when Some(user) %}
       <form method="POST" action="/logout">
         <input type="hidden" name="authenticity_token" value="{{ context.csrf_token.authenticity_token() }}" />
