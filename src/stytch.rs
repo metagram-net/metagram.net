@@ -312,6 +312,28 @@ pub mod sessions {
         AuthenticateRequest,
         AuthenticateResponse
     );
+
+    #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+    pub struct RevokeRequest {
+        pub session_id: Option<String>,
+        pub session_token: Option<String>,
+        pub session_jwt: Option<String>,
+    }
+
+    #[serde_as]
+    #[derive(Serialize, Deserialize, Debug, Clone)]
+    pub struct RevokeResponse {
+        #[serde(with = "http_serde::status_code")]
+        pub status_code: http::StatusCode,
+        pub request_id: String,
+    }
+
+    route!(
+        http::Method::POST,
+        "sessions/revoke",
+        RevokeRequest,
+        RevokeResponse
+    );
 }
 
 #[cfg(test)]

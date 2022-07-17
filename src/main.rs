@@ -41,7 +41,6 @@ struct Config {
     stytch_secret: String,
 }
 
-#[allow(unused)]
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct User {
     id: uuid::Uuid,
@@ -492,15 +491,37 @@ async fn logout(
     context: Context,
     user: Option<User>,
     cookies: PrivateCookieJar,
+    Extension(auth): Extension<Auth>,
     Form(form): Form<LogoutForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
         return Err(context.error(user, AppError::CsrfMismatch));
     }
 
+    let session_token = cookies
+        .get(SESSION_COOKIE_NAME)
+        .map(|c| c.value().to_string());
     let cookies = cookies.remove(Cookie::new(SESSION_COOKIE_NAME, ""));
 
-    // TODO: Revoke session
+    if let Some(session_token) = session_token {
+        match auth.revoke_session(session_token).await {
+            Ok(_res) => {
+                // TODO: Log session ID
+                tracing::info!("successfully revoked session");
+            }
+            Err(err) => {
+                // TODO: Log session ID
+                tracing::error!({ ?err }, "could not revoke session");
+                // Fail the logout request, which may be surprising.
+                //
+                // By clearing the cookie, the user's browser won't know the session token anymore.
+                // But anyone who _had_ somehow obtained that token would be able to use it until
+                // the session naturally expired. Clicking "Log out" again shouldn't be that much
+                // of an issue in the rare (🤞) case that revocation fails.
+                return Err(context.error(user, err.into()));
+            }
+        }
+    }
 
     Ok((cookies, Redirect::to("/")))
 }
@@ -532,6 +553,11 @@ trait AuthN {
         &self,
         token: String,
     ) -> stytch::Result<stytch::sessions::AuthenticateResponse>;
+
+    async fn revoke_session(
+        &self,
+        token: String,
+    ) -> stytch::Result<stytch::sessions::RevokeResponse>;
 }
 
 #[async_trait]
@@ -569,6 +595,17 @@ impl AuthN for StytchAuth {
         let req = stytch::sessions::AuthenticateRequest {
             session_token: Some(token),
             session_duration_minutes: Some(30),
+            ..Default::default()
+        };
+        req.send(self.client.clone()).await
+    }
+
+    async fn revoke_session(
+        &self,
+        token: String,
+    ) -> stytch::Result<stytch::sessions::RevokeResponse> {
+        let req = stytch::sessions::RevokeRequest {
+            session_token: Some(token),
             ..Default::default()
         };
         req.send(self.client.clone()).await
