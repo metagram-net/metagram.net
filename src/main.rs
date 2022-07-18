@@ -23,8 +23,6 @@ use tower_http::{
 };
 use tracing::Level;
 
-mod stytch;
-
 const SESSION_COOKIE_NAME: &str = "firehose_session";
 
 #[derive(Deserialize, Debug)]
