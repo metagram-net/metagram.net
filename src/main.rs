@@ -47,9 +47,15 @@ async fn main() {
                 .parse()
                 .expect("BASE_URL should be a valid URL");
 
+            let minutes = chrono::Duration::days(30)
+                .num_minutes()
+                .try_into()
+                .expect("session duration should fit in u32");
+
             Arc::new(StytchAuth {
                 client: stytch_config.client().expect("Stytch client"),
                 redirect_target: base_url.join("authenticate").expect("redirect_target"),
+                session_duration_minutes: Some(minutes),
             })
         }
     };
@@ -75,6 +81,7 @@ async fn main() {
 struct StytchAuth {
     client: stytch::Client,
     redirect_target: url::Url,
+    session_duration_minutes: Option<u32>,
 }
 
 #[async_trait]
@@ -99,7 +106,7 @@ impl firehose::AuthN for StytchAuth {
     ) -> stytch::Result<stytch::magic_links::AuthenticateResponse> {
         let req = stytch::magic_links::AuthenticateRequest {
             token,
-            session_duration_minutes: Some(30),
+            session_duration_minutes: self.session_duration_minutes,
             ..Default::default()
         };
         req.send(self.client.clone()).await
@@ -111,7 +118,7 @@ impl firehose::AuthN for StytchAuth {
     ) -> stytch::Result<stytch::sessions::AuthenticateResponse> {
         let req = stytch::sessions::AuthenticateRequest {
             session_token: Some(token),
-            session_duration_minutes: Some(30),
+            session_duration_minutes: self.session_duration_minutes,
             ..Default::default()
         };
         req.send(self.client.clone()).await
