@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block main %}
+<div class="max-w-prose">
+  <h1 class="font-quantico">
+    Firehose
+  </h1>
+
+  <p class="text-2xl font-quantico font-bold mt-2">
+    Too much content, not enough time
+  </p>
+
+  <p>
+    Software by <a href="https://jdkaplan.dev">Jeremy Kaplan</a>.
+    UX Design by <a href="https://designbk.com">Brandon Kaplan</a>.
+  </p>
+
+  <h3>What is Firehose?</h3>
+
+  <p>
+    Firehose tracks all the content that seems interesting when you find it, but
+    might not be worth reading <em>right now</em>. If you find yourself with
+    dozens of opens tabs that you <em>have</em> to read before closing them,
+    this might be what you need!
+  </p>
+
+  <p>
+    Named after the metaphor of the
+    <a href="http://hacks.mit.edu/Hacks/by_year/1991/fire_hydrant/">academic firehose</a>,
+    Firehose lets you admit that you'll never get to it all anyway, but maybe
+    you'll get to it some of it someday.
+  </p>
+
+  <h3>How is this different from Pocket, del.icio.us, etc.?</h3>
+
+  <p>
+    The other services I found were more like shared bookmarks: focused around
+    saving content that you already know is worth saving. Firehose tries to be a
+    good experience for things that are <em>probably</em> interesting, but
+    there's something preventing you from digesting it right away.
+  </p>
+
+  <p>
+    Firehose intentionally limits features like searching and sorting to nudge
+    you into a triage-like flow. You'll always see the oldest content first so
+    you can ask yourself, "Does this look interesting now?" If not, trash it!
+    This is its second chance anyway. If it's actually interesting, you'll
+    probably run into it again.
+  </p>
+
+  <p>
+    Firehose doesn't have any social or recommendation features (yet?). You have
+    enough content to deal with already!
+  </p>
+
+  <h3>Does it work?</h3>
+
+  <p>
+    Yeah! I already find myself spending more time doing interesting things and
+    less time managing sets of bookmarks. I also think I spend more time at
+    "tabs zero".
+  </p>
+
+  {% match user %}
+  {% when Some(user) %}
+  <p>
+    But you're part of the <a href="/firehose/streams/unread">alpha</a>, so
+    you tell me!
+  </p>
+  {% when None %}
+  <p>
+    It's still a rough experience, so I'm keeping signups closed for now. If
+    you want to test an alpha-quality service (or help me build it),
+    <a href="mailto:jdkaplan@metagram.net">email me</a>
+    to get a login.
+  </p>
+  {% endmatch %}
+  </p>
+</div>
+{% endblock %}

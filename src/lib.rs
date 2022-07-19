@@ -33,6 +33,8 @@ use models::User;
 pub mod auth;
 use auth::Session;
 
+mod firehose;
+
 type PgPool = Pool<AsyncPgConnection>;
 
 struct PgConn(Object<AsyncPgConnection>);
@@ -75,6 +77,7 @@ impl Server {
             .route("/", get(index))
             .route("/.well-known/health-check", get(health_check))
             .merge(auth::router())
+            .nest("/firehose", firehose::router())
             .route("/whoops/500", get(whoops_500))
             .route("/whoops/422", get(whoops_422))
             .fallback(not_found.into_service());
