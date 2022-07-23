@@ -15,12 +15,14 @@ base64 = "0.13.0"
 chrono = { version = "0.4.19", features = ["serde"] }
 cookie = { version = "0.16.0", features = ["private"] }
 derivative = "2.2.0"
+diesel = { version = "2.0.0-rc.1", features = ["postgres", "chrono", "uuid"] }
+diesel-async = { git = 'https://github.com/weiznich/diesel_async', version = "0.1.0", default-features = false, features = ["deadpool", "postgres"] }
 envy = "0.4.2"
 http = "0.2.7"
 hyper = "0.14.18"
 mockall = "0.11.1"
+r2d2 = "0.8.10"
 serde = { version = "1.0.137", features = ["derive"] }
-sqlx = { version = "0.5.13", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
 stytch = { path = "../stytch-rs" }
 thiserror = "1.0.31"
 tokio = { version = "1.18.2", features = ["full"] }
@@ -29,7 +31,7 @@ tower-http = { version = "0.3.3", features = ["trace", "request-id"] }
 tracing = "0.1.34"
 tracing-subscriber = { version = "0.3.11", features = ["env-filter"] }
 url = "2.2.2"
-uuid = { version = "0.8.2", features = ["v4", "serde"] }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 [patch.crates-io]
 askama = { git = 'https://github.com/djc/askama' }

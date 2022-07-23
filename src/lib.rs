@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate diesel;
+
 use askama::Template;
 use async_trait::async_trait;
 use axum::{
@@ -12,8 +15,13 @@ use axum_csrf::{CsrfLayer, CsrfToken};
 use axum_extra::extract::PrivateCookieJar;
 use cookie::Cookie;
 use derivative::Derivative;
+use diesel::prelude::*;
+use diesel_async::RunQueryDsl;
+use diesel_async::{
+    pooled_connection::deadpool::{self, Object, Pool},
+    AsyncPgConnection,
+};
 use serde::{Deserialize, Serialize};
-use sqlx::postgres::PgPool;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower::ServiceBuilder;
@@ -23,13 +31,14 @@ use tower_http::{
 };
 use tracing::Level;
 
+pub mod models;
+pub mod schema;
+
+use models::User;
+
 const SESSION_COOKIE_NAME: &str = "firehose_session";
 
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct User {
-    id: uuid::Uuid,
-    // TODO(v0.2): Actually drop the other columns from the table.
-}
+type PgPool = Pool<AsyncPgConnection>;
 
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -38,7 +47,7 @@ pub struct Session {
 }
 
 async fn find_session(
-    pool: &PgPool,
+    db: &mut AsyncPgConnection,
     auth: &Auth,
     cookies: PrivateCookieJar<cookie::Key>,
 ) -> anyhow::Result<Session> {
@@ -54,9 +63,11 @@ async fn find_session(
         }
     };
 
-    let user: User = sqlx::query_as("select * from users where stytch_user_id = $1")
-        .bind(session.user_id.clone())
-        .fetch_one(pool)
+    use schema::users::dsl::*;
+
+    let user: User = users
+        .filter(stytch_user_id.eq(session.user_id.clone()))
+        .get_result(db)
         .await?;
 
     Ok(Session {
@@ -70,7 +81,7 @@ impl<B> axum::extract::FromRequest<B> for Session
 where
     B: Send,
 {
-    type Rejection = Redirect;
+    type Rejection = Response;
 
     async fn from_request(
         req: &mut axum::extract::RequestParts<B>,
@@ -79,16 +90,46 @@ where
             .await
             .expect("extension: PgPool");
         let auth: Extension<Auth> = Extension::from_request(req).await.expect("extension: Auth");
-        let cookies: PrivateCookieJar<cookie::Key> = PrivateCookieJar::from_request(req)
+        let cookies = PrivateCookieJar::from_request(req)
             .await
             .expect("PrivateCookieJar");
+        let context = Context::from_request(req).await.expect("PrivateCookieJar");
 
-        match find_session(&*pool, &*auth, cookies).await {
+        let mut db = match pool.get().await {
+            Ok(conn) => conn,
+            Err(err) => return Err(context.error(None, err.into())),
+        };
+
+        match find_session(&mut db, &*auth, cookies).await {
             Ok(session) => Ok(session),
             Err(err) => {
                 tracing::error!({ ?err }, "no active session");
-                Err(Redirect::to("/login"))
+                Err(Redirect::to("/login").into_response())
             }
+        }
+    }
+}
+
+struct PgConn(Object<AsyncPgConnection>);
+
+#[axum::async_trait]
+impl<B> axum::extract::FromRequest<B> for PgConn
+where
+    B: Send,
+{
+    type Rejection = Response;
+
+    async fn from_request(
+        req: &mut axum::extract::RequestParts<B>,
+    ) -> Result<Self, Self::Rejection> {
+        let pool: Extension<PgPool> = Extension::from_request(req)
+            .await
+            .expect("extension: PgPool");
+        let context = Context::from_request(req).await.expect("PrivateCookieJar");
+
+        match pool.get().await {
+            Ok(conn) => Ok(PgConn(conn)),
+            Err(err) => Err(context.error(None, err.into())),
         }
     }
 }
@@ -182,6 +223,9 @@ enum AppError {
     StytchError(#[from] stytch::Error),
 
     #[error(transparent)]
+    DeadpoolError(#[from] deadpool::PoolError),
+
+    #[error(transparent)]
     Unhandled(#[from] anyhow::Error),
 }
 
@@ -223,6 +267,17 @@ impl Context {
                 .into_response(),
             StytchError(err) => {
                 tracing::error!({ ?err }, "stytch error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    InternalServerError {
+                        context: self,
+                        user,
+                    },
+                )
+                    .into_response()
+            }
+            DeadpoolError(err) => {
+                tracing::error!({ ?err }, "deadpool error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     InternalServerError {
@@ -387,11 +442,12 @@ struct AuthenticateQuery {
     redirect_path: Option<String>,
 }
 
+#[allow(unreachable_code, unused)]
 async fn authenticate(
     context: Context,
     session: Option<Session>,
     cookies: PrivateCookieJar,
-    Extension(pool): Extension<PgPool>,
+    PgConn(mut db): PgConn,
     Extension(auth): Extension<Auth>,
     Query(query): Query<AuthenticateQuery>,
 ) -> impl IntoResponse {
@@ -401,9 +457,11 @@ async fn authenticate(
     };
     tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
-    let user: sqlx::Result<User> = sqlx::query_as("select * from users where stytch_user_id = $1")
-        .bind(res.user_id.clone())
-        .fetch_one(&pool)
+    use schema::users::dsl::*;
+
+    let user: QueryResult<User> = users
+        .filter(stytch_user_id.eq(res.user_id.clone()))
+        .get_result(&mut db)
         .await;
 
     match user {
