@@ -17,3 +17,6 @@ services-stop: ## Stop development services
 
 services-down: ## _Destroy_ development services (this deletes data!)
 	docker-compose down
+
+migrate: ## Run local database migrations
+	diesel migration run
