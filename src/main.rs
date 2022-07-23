@@ -35,7 +35,7 @@ async fn main() {
         cookie::Key::from(&key)
     };
 
-    let auth: firehose::Auth = {
+    let auth: firehose::auth::Auth = {
         if config.mock_auth {
             Arc::new(mock_auth())
         } else {
@@ -86,7 +86,7 @@ struct StytchAuth {
 }
 
 #[async_trait]
-impl firehose::AuthN for StytchAuth {
+impl firehose::auth::AuthN for StytchAuth {
     async fn send_magic_link(
         &self,
         email: String,
@@ -137,9 +137,9 @@ impl firehose::AuthN for StytchAuth {
     }
 }
 
-pub fn mock_auth() -> firehose::MockAuthN {
+pub fn mock_auth() -> firehose::auth::MockAuthN {
     use mockall::predicate as p;
-    let mut mock = firehose::MockAuthN::new();
+    let mut mock = firehose::auth::MockAuthN::new();
     mock.expect_send_magic_link()
         .with(p::eq("jdkaplan@metagram.net".to_string()))
         .returning(|_| {
