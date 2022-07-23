@@ -25,13 +25,15 @@ use tower_http::{
 };
 use tracing::Level;
 
-pub mod models;
-pub mod schema;
+mod models;
+mod schema;
+mod sql_types;
 
 use models::User;
 
-pub mod auth;
+pub(crate) mod auth;
 use auth::Session;
+pub use auth::{Auth, AuthN, MockAuthN};
 
 mod firehose;
 
