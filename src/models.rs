@@ -37,6 +37,17 @@ pub enum DropStatus {
     Saved,
 }
 
+impl std::fmt::Display for DropStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = match self {
+            Self::Unread => "unread",
+            Self::Read => "read",
+            Self::Saved => "saved",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 impl ToSql<sql_types::Drop_status, Pg> for DropStatus {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         match *self {

@@ -39,8 +39,8 @@ async fn about(context: Context, session: Option<Session>) -> impl IntoResponse 
 }
 
 #[derive(Template)]
-#[template(path = "firehose/status_stream.html")]
-struct StatusStream {
+#[template(path = "firehose/stream.html")]
+struct ShowStream {
     context: Context,
     user: Option<User>,
     drops: Vec<Drop>,
@@ -52,47 +52,34 @@ async fn stream(
     Path(id): Path<String>,
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    match id.as_str() {
-        "unread" => {
-            let rows = list_drops(&mut db, session.user.clone(), DropStatus::Unread).await;
-            let drops = match rows {
-                Ok(drops) => drops,
-                Err(err) => return Err(context.error(Some(session), err.into())),
-            };
-            Ok(StatusStream {
-                context,
-                user: Some(session.user),
-                drops,
-            })
-        }
-        "read" => todo!(),
-        "saved" => todo!(),
-        _id => todo!("feat: custom stream IDs"),
-    }
-}
+    let drops: anyhow::Result<Vec<Drop>> = match id.as_str() {
+        "unread" => list_drops(&mut db, session.user.clone(), DropStatus::Unread).await,
+        "read" => list_drops(&mut db, session.user.clone(), DropStatus::Read).await,
+        "saved" => list_drops(&mut db, session.user.clone(), DropStatus::Saved).await,
+        _id => todo!("feat: custom streams"),
+    };
 
-impl std::fmt::Display for DropStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let s = match self {
-            Self::Unread => "unread",
-            Self::Read => "read",
-            Self::Saved => "saved",
-        };
-        write!(f, "{}", s)
+    match drops {
+        Ok(drops) => Ok(ShowStream {
+            context,
+            user: Some(session.user),
+            drops,
+        }),
+        Err(err) => Err(context.error(Some(session), err.into())),
     }
 }
 
 async fn list_drops(
     db: &mut AsyncPgConnection,
     user: User,
-    v_status: DropStatus,
+    status: DropStatus,
 ) -> anyhow::Result<Vec<Drop>> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
     use schema::drops::dsl as t;
 
     let res = t::drops
-        .filter(t::user_id.eq(user.id).and(t::status.eq(v_status)))
+        .filter(t::user_id.eq(user.id).and(t::status.eq(status)))
         .load(db)
         .await?;
     Ok(res)
@@ -118,7 +105,7 @@ pub async fn create_drop(
     let drop: Drop = insert_into(t::drops)
         .values(&NewDrop {
             user_id: user.id,
-            title: attrs.title.as_ref().map(|x| x as _),
+            title: attrs.title.as_deref(),
             url: &attrs.url,
             status: attrs.status.unwrap_or(DropStatus::Unread),
             moved_at: now.naive_utc(),

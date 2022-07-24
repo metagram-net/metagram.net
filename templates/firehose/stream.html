@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block main %}
+{# TODO(streams): show stream name and query #}
 {% if drops.is_empty() %}
 <p>You've reached the end of the stream!</p>
 {% else %}
@@ -16,9 +17,9 @@
       <span class="my-2">
         {{ drop.domain() }}
       </span>
-      <!-- TODO(tags): Render the tags here -->
+      {# TODO(tags): Render the tags here #}
     </div>
-    <!-- TODO(writes): Render the actions here -->
+    {# TODO(writes): Render the actions here #}
   </div>
   {% endfor %}
 </ul>
