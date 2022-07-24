@@ -25,17 +25,17 @@ use tower_http::{
 };
 use tracing::Level;
 
-mod models;
-mod schema;
-mod sql_types;
+pub mod models;
+#[rustfmt::skip]
+pub mod schema;
+pub mod sql_types;
+pub use models::User;
 
-use models::User;
-
-pub(crate) mod auth;
+pub mod auth;
 use auth::Session;
 pub use auth::{Auth, AuthN, MockAuthN};
 
-mod firehose;
+pub mod firehose;
 
 type PgPool = Pool<AsyncPgConnection>;
 

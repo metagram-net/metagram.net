@@ -49,7 +49,7 @@ pub fn router() -> Router {
     Router::new()
         .route("/login", get(login).post(login_form))
         .route("/logout", post(logout))
-        .route("/authenticate", get(authenticate))
+        .route("/authenticate", get(authenticate)) // TODO: handle non-destructive HEAD request
 }
 
 #[derive(Debug, Clone)]
@@ -261,4 +261,20 @@ async fn logout(
     }
 
     Ok((cookies, Redirect::to("/")))
+}
+
+pub async fn create_user(
+    db: &mut AsyncPgConnection,
+    stytch_user_id: String,
+) -> anyhow::Result<models::User> {
+    use diesel::insert_into;
+    use schema::users::dsl as t;
+
+    let user: models::User = insert_into(t::users)
+        .values(&models::NewUser {
+            stytch_user_id: &stytch_user_id,
+        })
+        .get_result(db)
+        .await?;
+    Ok(user)
 }

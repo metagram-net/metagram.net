@@ -7,7 +7,7 @@ use axum::{
 };
 use diesel_async::AsyncPgConnection;
 
-use crate::models::{Drop, DropStatus, User};
+use crate::models::{Drop, DropStatus, NewDrop, User};
 use crate::{schema, Context, PgConn, Session};
 
 pub fn router() -> Router {
@@ -96,4 +96,34 @@ async fn list_drops(
         .load(db)
         .await?;
     Ok(res)
+}
+
+#[derive(Default)]
+pub struct DropFields {
+    pub title: Option<String>,
+    pub url: String,
+    pub status: Option<DropStatus>,
+}
+
+pub async fn create_drop(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    attrs: DropFields,
+    now: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<Drop> {
+    use diesel::insert_into;
+    use diesel_async::RunQueryDsl;
+    use schema::drops::dsl as t;
+
+    let drop: Drop = insert_into(t::drops)
+        .values(&NewDrop {
+            user_id: user.id,
+            title: attrs.title.as_ref().map(|x| x as _),
+            url: &attrs.url,
+            status: attrs.status.unwrap_or(DropStatus::Unread),
+            moved_at: now.naive_utc(),
+        })
+        .get_result(db)
+        .await?;
+    Ok(drop)
 }

@@ -3,12 +3,13 @@ use diesel::{
     deserialize::{self, FromSql},
     pg::{Pg, PgValue},
     serialize::{self, IsNull, Output, ToSql},
-    AsExpression, FromSqlRow, Queryable,
+    AsExpression, FromSqlRow, Insertable, Queryable,
 };
+use serde::Deserialize;
 use std::io::Write;
 use uuid::Uuid;
 
-use crate::sql_types;
+use crate::{schema, sql_types};
 
 // Remember: using `#[derive(Queryable)]` assumes that the order of fields on the `Model` struct
 // matches the order of columns in the `models` table (stored in `schema.rs`).
@@ -21,8 +22,15 @@ pub struct User {
     pub updated_at: Timestamp,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, FromSqlRow, AsExpression)]
+#[derive(Deserialize, Insertable, Debug, Clone)]
+#[diesel(table_name = schema::users)]
+pub struct NewUser<'a> {
+    pub stytch_user_id: &'a str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, FromSqlRow, AsExpression)]
 #[diesel(sql_type = sql_types::Drop_status)]
+#[serde(rename_all = "lowercase")]
 pub enum DropStatus {
     Unread,
     Read,
@@ -71,4 +79,14 @@ impl Drop {
     pub fn display_text(&self) -> String {
         self.title.as_ref().unwrap_or(&self.url).to_string()
     }
+}
+
+#[derive(Deserialize, Insertable, Debug, Clone)]
+#[diesel(table_name = schema::drops)]
+pub struct NewDrop<'a> {
+    pub user_id: Uuid,
+    pub title: Option<&'a str>,
+    pub url: &'a str,
+    pub status: DropStatus,
+    pub moved_at: Timestamp,
 }

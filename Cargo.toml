@@ -2,6 +2,7 @@
 name = "firehose"
 version = "0.1.0"
 edition = "2021"
+default-run = "firehose"
 
 [dependencies]
 anyhow = "1.0.57"
@@ -13,15 +14,18 @@ axum-extra = { version = "0.3.3", features = ["cookie-private", "cookie"] }
 axum_csrf = "0.4.0"
 base64 = "0.13.0"
 chrono = { version = "0.4.19", features = ["serde"] }
+clap = { version = "3.2.14", features = ["derive"] }
 cookie = { version = "0.16.0", features = ["private"] }
 derivative = "2.2.0"
 diesel = { version = "2.0.0-rc.1", features = ["postgres", "chrono", "uuid"] }
 diesel-async = { git = 'https://github.com/weiznich/diesel_async', version = "0.1.0", default-features = false, features = ["deadpool", "postgres"] }
 envy = "0.4.2"
+fake = "2.5.0"
 http = "0.2.7"
 hyper = "0.14.18"
 mockall = "0.11.1"
 r2d2 = "0.8.10"
+rand = "0.8.5"
 serde = { version = "1.0.137", features = ["derive"] }
 stytch = { path = "../stytch-rs" }
 thiserror = "1.0.31"
