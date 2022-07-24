@@ -146,8 +146,8 @@ pub fn mock_auth() -> firehose::MockAuthN {
             Ok(stytch::magic_links::email::SendResponse {
                 status_code: http::StatusCode::OK,
                 request_id: "mock-request".to_string(),
-                user_id: "74fba03a-0c9a-4f86-b255-549e479821cf".to_string(),
-                email_id: "todo!".to_string(),
+                user_id: std::env::var("STYTCH_USER_ID").expect("STYTCH_USER_ID"),
+                email_id: "".to_string(),
             })
         });
     mock
