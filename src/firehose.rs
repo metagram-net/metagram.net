@@ -15,6 +15,12 @@ pub fn router() -> Router {
         .route("/", get(index))
         .route("/about", get(about))
         .route("/streams/:id", get(stream))
+        .route("/drops", get(drops_index)) // TODO: The rest of the REST
+        .route("/drops/:id", get(drops_show))
+}
+
+async fn drops_index() -> Redirect {
+    Redirect::to("/firehose/streams/unread")
 }
 
 async fn index(session: Option<Session>) -> impl IntoResponse {
@@ -113,4 +119,44 @@ pub async fn create_drop(
         .get_result(db)
         .await?;
     Ok(drop)
+}
+
+#[derive(Template)]
+#[template(path = "firehose/drop.html")]
+struct ShowDrop {
+    context: Context,
+    user: Option<User>,
+    drop: Drop,
+}
+
+async fn drops_show(
+    context: Context,
+    session: Session,
+    Path(id): Path<uuid::Uuid>,
+    PgConn(mut db): PgConn,
+) -> Result<impl IntoResponse, Response> {
+    match find_drop(&mut db, &session.user, id).await {
+        Ok(drop) => Ok(ShowDrop {
+            context,
+            user: Some(session.user),
+            drop,
+        }),
+        Err(err) => Err(context.error(Some(session), err.into())),
+    }
+}
+
+pub async fn find_drop(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    id: uuid::Uuid,
+) -> anyhow::Result<Drop> {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use schema::drops::dsl as t;
+
+    let res = t::drops
+        .filter(t::user_id.eq(user.id).and(t::id.eq(id)))
+        .get_result(db)
+        .await?;
+    Ok(res)
 }

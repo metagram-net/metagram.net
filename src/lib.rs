@@ -82,6 +82,7 @@ impl Server {
             .nest("/firehose", firehose::router())
             .route("/whoops/500", get(whoops_500))
             .route("/whoops/422", get(whoops_422))
+            // TODO: Serve CSS
             .fallback(not_found.into_service());
 
         let trace_layer = TraceLayer::new_for_http()
