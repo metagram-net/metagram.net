@@ -2,6 +2,12 @@
 <html lang="en">
   <head>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    {% match context.request_id %}
+    {% when Some(request_id) %}
+    <meta name="x-request-id" content="{{request_id}}" />
+    {% when None %}
+    <meta name="x-request-id" content="(missing)" />
+    {% endmatch %}
 
     <title>{% block title %}Firehose{% endblock %}</title>
 
