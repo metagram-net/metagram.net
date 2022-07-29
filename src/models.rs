@@ -70,7 +70,8 @@ impl FromSql<sql_types::Drop_status, Pg> for DropStatus {
     }
 }
 
-#[derive(Queryable, Debug, Clone)]
+#[derive(Queryable, Identifiable, Debug, Clone)]
+#[diesel(table_name=schema::drops)]
 pub struct Drop {
     pub id: Uuid,
     pub user_id: Uuid,

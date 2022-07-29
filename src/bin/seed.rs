@@ -58,12 +58,7 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
             None
         };
 
-        let fields = fh::DropFields {
-            title,
-            url: article.url,
-            ..Default::default()
-        };
-        let drop = fh::create_drop(db, &user, fields, chrono::Utc::now()).await?;
+        let drop = fh::create_drop(db, &user, title, article.url, chrono::Utc::now()).await?;
         println!("Created drop: {}", drop.id);
     }
 

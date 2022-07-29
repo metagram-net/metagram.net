@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block main %}
+<h1>New Drop</h1>
+
+{# TODO: named routes -> paths #}
+<form method="POST" action="/firehose/drops">
+  {# TODO: show form errors #}
+
+  <div>
+    <label for="title">Title</label>
+    <div>
+      <input
+          type="text"
+          name="title"
+          class="w-full truncate"
+          autofocus
+          value="{{ drop.title }}"
+      />
+    </div>
+  </div>
+
+  <div>
+    <label for="url">URL</label>
+    <div>
+      <input
+          type="text"
+          name="url"
+          class="w-full truncate"
+          autofocus
+          value="{{ drop.url }}"
+      />
+    </div>
+  </div>
+
+  {# TODO(tags): multi-select tags #}
+
+  <div>
+    <button type="submit" class="btn btn-gray">Create Drop</button>
+  </div>
+</form>
+
+{# TODO: bookmarklet #}
+{% endblock %}

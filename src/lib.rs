@@ -39,7 +39,7 @@ pub mod firehose;
 
 type PgPool = Pool<AsyncPgConnection>;
 
-struct PgConn(Object<AsyncPgConnection>);
+pub struct PgConn(Object<AsyncPgConnection>);
 
 #[axum::async_trait]
 impl<B> axum::extract::FromRequest<B> for PgConn
@@ -170,7 +170,7 @@ async fn health_check() -> Json<Health> {
 
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
-struct Context {
+pub struct Context {
     #[derivative(Debug = "ignore")]
     csrf_token: CsrfToken,
     request_id: Option<String>,
