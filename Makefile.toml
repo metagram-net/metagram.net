@@ -1,0 +1,39 @@
+[tasks.dev]
+description = "Start dev services and run the app, watching for changes"
+run_task = { name = ["services", "tailwind", "run"], parallel = true }
+
+[tasks.tailwind]
+command = "npx"
+args = [
+    "tailwindcss",
+    "--input", "./css/index.css",
+    "--output", "./dist/index.css",
+    "--watch",
+]
+
+[tasks.run]
+description = "Run the server"
+command = "cargo"
+args = ["run"]
+watch = { watch = ["src", "templates", "Cargo.toml"] }
+
+[tasks.migrate]
+description = "Run database migrations"
+install_crate = { crate_name = "diesel_cli", binary = "diesel", test_arg = "--help" }
+command = "diesel"
+args = ["migration", "run"]
+
+[tasks.services]
+description = "Start dev services and run the app with change watchers"
+command = "docker-compose"
+args = ["up", "--detach"]
+
+[tasks.services-stop]
+description = "Stop dev services"
+command = "docker-compose"
+args = ["stop"]
+
+[tasks.services-down]
+description = "_Destroy_ dev services (this deletes data!)"
+command = "docker-compose"
+args = ["down"]
