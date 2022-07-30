@@ -19,7 +19,7 @@ struct Args {
 const NUM_DROPS: u8 = 10;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let mut db = {
@@ -29,7 +29,7 @@ async fn main() {
             .expect("database connection")
     };
 
-    seed(&mut db, args).await.unwrap();
+    seed(&mut db, args).await
 }
 
 async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {

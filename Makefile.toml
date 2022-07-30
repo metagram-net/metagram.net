@@ -37,3 +37,8 @@ args = ["stop"]
 description = "_Destroy_ dev services (this deletes data!)"
 command = "docker-compose"
 args = ["down"]
+
+[tasks.seed]
+description = "Populate the database with some fake data"
+command = "cargo"
+args = ["run", "--bin", "seed", "--", "--stytch-user-id", "${STYTCH_USER_ID}"]
