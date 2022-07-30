@@ -11,6 +11,7 @@ use axum::{
     Json, Router,
 };
 use axum_csrf::{CsrfLayer, CsrfToken};
+use axum_extra::routing::SpaRouter;
 use derivative::Derivative;
 use diesel_async::{
     pooled_connection::deadpool::{self, Object, Pool},
@@ -82,7 +83,8 @@ impl Server {
             .nest("/firehose", firehose::router())
             .route("/whoops/500", get(whoops_500))
             .route("/whoops/422", get(whoops_422))
-            // TODO: Serve CSS
+            // Apparently the SPA router is the easiest way to serve assets at a nested route.
+            .merge(SpaRouter::new("/dist", "dist"))
             .fallback(not_found.into_service());
 
         let trace_layer = TraceLayer::new_for_http()
