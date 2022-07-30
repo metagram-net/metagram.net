@@ -10,7 +10,7 @@ askama = { version = "0.11.2", features = ["with-axum"] }
 askama_axum = "0.1.0"
 async-trait = "0.1.56"
 axum = { version = "0.5.1", features = ["headers"] }
-axum-extra = { version = "0.3.3", features = ["cookie-private", "cookie"] }
+axum-extra = { version = "0.3.3", features = ["cookie-private", "cookie", "typed-routing"] }
 axum_csrf = "0.4.0"
 base64 = "0.13.0"
 chrono = { version = "0.4.19", features = ["serde"] }

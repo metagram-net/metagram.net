@@ -2,30 +2,20 @@ use askama::Template;
 use axum::extract::Path;
 use axum::{
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post},
+    routing::get,
     Router,
 };
-use axum_extra::routing::Resource;
 use diesel_async::AsyncPgConnection;
 
 use crate::models::{Drop, DropStatus, NewDrop, User};
 use crate::{schema, Context, PgConn, Session};
 
 pub fn router() -> Router {
-    let drops = Resource::named("drops")
-        .index(drops::index)
-        .new(drops::new)
-        .create(drops::create)
-        .show(drops::show)
-        .edit(drops::edit)
-        .update(drops::update)
-        .nest(Router::new().route("/move", post(drops::r#move)));
-
     Router::new()
         .route("/", get(index))
         .route("/about", get(about))
         .route("/streams/:id", get(stream))
-        .merge(drops)
+        .merge(drops::router())
 }
 
 async fn index(session: Option<Session>) -> impl IntoResponse {
@@ -158,15 +148,59 @@ pub async fn move_drop(
 
 mod drops {
     use askama::Template;
-    use axum::extract::{Form, Path};
-    use axum::response::{IntoResponse, Redirect, Response};
+    use axum::{
+        extract::Form,
+        response::{IntoResponse, Redirect, Response},
+        Router,
+    };
+    use axum_extra::routing::{RouterExt, TypedPath};
     use diesel_async::AsyncPgConnection;
     use serde::Deserialize;
+    use uuid::Uuid;
 
     use crate::models::{Drop, DropStatus, User};
     use crate::{schema, Context, PgConn, Session};
 
-    pub async fn index() -> Redirect {
+    pub fn router() -> Router {
+        Router::new()
+            .typed_get(index)
+            .typed_get(new)
+            .typed_post(create)
+            .typed_get(show)
+            .typed_get(edit)
+            .typed_post(update)
+            .typed_post(r#move)
+    }
+
+    // TODO(named routes): Get these route builders somewhere that views can use them.
+
+    #[derive(TypedPath, Deserialize)]
+    #[typed_path("/drops")]
+    pub struct Collection;
+
+    #[derive(TypedPath, Deserialize)]
+    #[typed_path("/drops/new")]
+    pub struct New;
+
+    #[derive(TypedPath, Deserialize)]
+    #[typed_path("/drops/:id")]
+    pub struct Member {
+        id: Uuid,
+    }
+
+    #[derive(TypedPath, Deserialize)]
+    #[typed_path("/drops/:id/edit")]
+    pub struct Edit {
+        id: Uuid,
+    }
+
+    #[derive(TypedPath, Deserialize)]
+    #[typed_path("/drops/:id/move")]
+    pub struct Move {
+        id: Uuid,
+    }
+
+    pub async fn index(_: Collection) -> Redirect {
         Redirect::to("/firehose/streams/unread")
     }
 
@@ -185,7 +219,7 @@ mod drops {
         drop: DropForm,
     }
 
-    pub async fn new(context: Context, session: Session) -> impl IntoResponse {
+    pub async fn new(_: New, context: Context, session: Session) -> impl IntoResponse {
         NewDrop {
             context,
             user: Some(session.user),
@@ -194,6 +228,7 @@ mod drops {
     }
 
     pub async fn create(
+        _: Collection,
         context: Context,
         session: Session,
         PgConn(mut db): PgConn,
@@ -231,9 +266,9 @@ mod drops {
     }
 
     pub async fn show(
+        Member { id }: Member,
         context: Context,
         session: Session,
-        Path(id): Path<uuid::Uuid>,
         PgConn(mut db): PgConn,
     ) -> Result<impl IntoResponse, Response> {
         match find_drop(&mut db, &session.user, id).await {
@@ -256,9 +291,9 @@ mod drops {
     }
 
     pub async fn edit(
+        Edit { id }: Edit,
         context: Context,
         session: Session,
-        Path(id): Path<uuid::Uuid>,
         PgConn(mut db): PgConn,
     ) -> Result<impl IntoResponse, Response> {
         let drop = find_drop(&mut db, &session.user, id).await;
@@ -277,10 +312,10 @@ mod drops {
     }
 
     pub async fn update(
+        Member { id }: Member,
         context: Context,
         session: Session,
         PgConn(mut db): PgConn,
-        Path(id): Path<uuid::Uuid>,
         Form(form): Form<DropForm>,
     ) -> Result<Redirect, Response> {
         let drop = match find_drop(&mut db, &session.user, id).await {
@@ -326,10 +361,10 @@ mod drops {
     }
 
     pub async fn r#move(
+        Move { id }: Move,
         context: Context,
         session: Session,
         PgConn(mut db): PgConn,
-        Path(id): Path<uuid::Uuid>,
         Form(form): Form<MoveForm>,
     ) -> Result<Redirect, impl IntoResponse> {
         let now = chrono::Utc::now();
