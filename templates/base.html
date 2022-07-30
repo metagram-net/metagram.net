@@ -13,20 +13,34 @@
 
     {% block head %}{% endblock %}
   </head>
-  <body>
-    <nav>
-      <a href="/">Firehose</a>
 
-      {% match user %}
-      {% when Some(user) %}
-      <form method="POST" action="/logout">
-        <input type="hidden" name="authenticity_token" value="{{ context.csrf_token.authenticity_token() }}" />
-        <button type="submit">Log out</button>
-      </form>
-      {% when None %}
-      <a href="/login">Log in</a>
-      {% endmatch %}
+  <body class="dark:text-white dark:bg-gray-900">
+    <nav class="bg-gray-50 dark:bg-gray-800 py-1 px-2">
+      <ul class="md:flex md:justify-between">
+        <div class="md:flex md:space-x-4">
+          {# TODO(named routes): use them here #}
+          <li><a href="/">Metagram</a>
+          <li><a href="/firehose">Firehose</a>
+          <li><a href="/about">About</a>
+        </div>
+        <div class="md:flex md:space-x-4">
+          {% match user %}
+          {% when Some(user) %}
+          <form method="POST" action="/logout">
+            <input
+              type="hidden"
+              name="authenticity_token"
+              value="{{ context.csrf_token.authenticity_token() }}"
+            />
+            <button type="submit">Log out</button>
+          </form>
+          {% when None %}
+          <a href="/login">Log in</a>
+          {% endmatch %}
+        </div>
+      </ul>
     </nav>
+
     <main>{% block main %}{% endblock %}</main>
   </body>
 </html>
