@@ -1,0 +1,6 @@
+{
+  "name": "firehose",
+  "devDependencies": {
+    "tailwindcss": "^3.1.7"
+  }
+}
