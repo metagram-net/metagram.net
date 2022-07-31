@@ -14,7 +14,10 @@ pub fn build() -> Router {
         .route("/.well-known/health-check", get(home::health_check))
         .route("/auth/login", get(auth::login).post(auth::login_form))
         .route("/auth/logout", post(auth::logout))
-        .route("/auth/authenticate", get(auth::authenticate)) // TODO: handle non-destructive HEAD request
+        .route(
+            "/auth/authenticate",
+            get(auth::authenticate).head(auth::authenticate_head),
+        )
         .route("/firehose", get(firehose::index))
         .route("/firehose/about", get(firehose::about))
         .route("/firehose/streams/:id", get(streams::show))

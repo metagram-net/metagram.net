@@ -2,7 +2,7 @@ use askama::Template;
 use axum::{
     extract::{Extension, Form, Query},
     http::StatusCode,
-    response::{IntoResponse, Redirect},
+    response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::PrivateCookieJar;
 use serde::Deserialize;
@@ -73,6 +73,8 @@ pub struct AuthenticateQuery {
     redirect_path: Option<String>,
 }
 
+type AuthenticateResponse = (PrivateCookieJar, Redirect);
+
 pub async fn authenticate(
     context: Context,
     session: Option<Session>,
@@ -80,7 +82,7 @@ pub async fn authenticate(
     PgConn(mut db): PgConn,
     Extension(auth): Extension<auth::Auth>,
     Query(query): Query<AuthenticateQuery>,
-) -> impl IntoResponse {
+) -> Result<AuthenticateResponse, Response> {
     let res = match auth.authenticate_magic_link(query.token).await {
         Ok(res) => res,
         Err(err) => return Err(context.error(session, err.into())),
@@ -95,13 +97,19 @@ pub async fn authenticate(
                 Some(path) => Redirect::to(&path),
                 None => Redirect::to("/"),
             };
-            Ok((cookies.add(cookie), redirect).into_response())
+            Ok((cookies.add(cookie), redirect))
         }
         Err(err) => {
             tracing::error!({ stytch_user_id = ?res.user_id, ?err }, "find user by Stytch ID");
-            Ok((StatusCode::BAD_REQUEST, Redirect::to("/login")).into_response())
+            Err((StatusCode::BAD_REQUEST, Redirect::to("/login")).into_response())
         }
     }
+}
+
+pub async fn authenticate_head(cookies: PrivateCookieJar) -> AuthenticateResponse {
+    let cookie = auth::session_cookie("".to_string());
+    let redirect = Redirect::to("/");
+    (cookies.add(cookie), redirect)
 }
 
 #[derive(Deserialize, Debug)]
