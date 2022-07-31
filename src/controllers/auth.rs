@@ -5,12 +5,9 @@ use axum::{
     response::{IntoResponse, Redirect},
 };
 use axum_extra::extract::PrivateCookieJar;
-use cookie::Cookie;
-use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
 use serde::Deserialize;
 
-use crate::{auth, models, schema};
+use crate::{auth, models};
 use crate::{AppError, Context, PgConn, Session};
 
 #[derive(Template)]
@@ -90,19 +87,9 @@ pub async fn authenticate(
     };
     tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
-    use schema::users::dsl::*;
-
-    let user: QueryResult<models::User> = users
-        .filter(stytch_user_id.eq(res.user_id.clone()))
-        .get_result(&mut db)
-        .await;
-
-    match user {
+    match auth::find_user(&mut db, res.user_id.clone()).await {
         Ok(_) => {
-            let cookie = Cookie::build(auth::SESSION_COOKIE_NAME, res.session_token)
-                .permanent()
-                .secure(true)
-                .finish();
+            let cookie = auth::session_cookie(res.session_token);
 
             let redirect = match query.redirect_path {
                 Some(path) => Redirect::to(&path),
@@ -133,30 +120,22 @@ pub async fn logout(
         return Err(context.error(session, AppError::CsrfMismatch));
     }
 
-    let session_token = cookies
-        .get(auth::SESSION_COOKIE_NAME)
-        .map(|c| c.value().to_string());
-    let cookies = cookies.remove(Cookie::new(auth::SESSION_COOKIE_NAME, ""));
-
-    if let Some(session_token) = session_token {
-        match auth.revoke_session(session_token).await {
-            Ok(_res) => {
-                let session_id = session.map(|s| s.stytch.session_id);
-                tracing::info!({ ?session_id }, "successfully revoked session");
-            }
-            Err(err) => {
-                let session_id = session.as_ref().map(|s| s.stytch.session_id.clone());
-                tracing::error!({ ?session_id, ?err }, "could not revoke session");
-                // Fail the logout request, which may be surprising.
-                //
-                // By clearing the cookie, the user's browser won't know the session token anymore.
-                // But anyone who _had_ somehow obtained that token would be able to use it until
-                // the session naturally expired. Clicking "Log out" again shouldn't be that much
-                // of an issue in the rare (🤞) case that revocation fails.
-                return Err(context.error(session, err.into()));
-            }
+    match auth::revoke_session(&auth, cookies).await {
+        Ok(cookies) => {
+            let session_id = session.map(|s| s.stytch.session_id);
+            tracing::info!({ ?session_id }, "successfully revoked session");
+            Ok((cookies, Redirect::to("/")))
+        }
+        Err(err) => {
+            let session_id = session.as_ref().map(|s| s.stytch.session_id.clone());
+            tracing::error!({ ?session_id, ?err }, "could not revoke session");
+            // Fail the logout request, which may be surprising.
+            //
+            // By clearing the cookie, the user's browser won't know the session token anymore. But
+            // anyone who _had_ somehow obtained that token would be able to use it until the
+            // session naturally expired. Clicking "Log out" again shouldn't be that much of an
+            // issue in the rare (🤞) case that revocation fails.
+            Err(context.error(session, err.into()))
         }
     }
-
-    Ok((cookies, Redirect::to("/")))
 }

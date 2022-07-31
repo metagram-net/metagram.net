@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::PrivateCookieJar;
+use cookie::Cookie;
 use diesel::prelude::*;
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
@@ -11,7 +12,7 @@ use std::sync::Arc;
 
 use crate::{models, schema, PgConn};
 
-pub const SESSION_COOKIE_NAME: &str = "firehose_session";
+const SESSION_COOKIE_NAME: &str = "firehose_session";
 
 pub type Auth = Arc<dyn AuthN + Send + Sync>;
 
@@ -43,36 +44,6 @@ pub trait AuthN {
 pub struct Session {
     pub user: models::User,
     pub stytch: stytch::Session,
-}
-
-async fn find_session(
-    db: &mut AsyncPgConnection,
-    auth: &Auth,
-    cookies: PrivateCookieJar<cookie::Key>,
-) -> anyhow::Result<Session> {
-    let session_token = cookies
-        .get(SESSION_COOKIE_NAME)
-        .map(|c| c.value().to_string());
-
-    let session = match session_token {
-        None => return Err(anyhow::anyhow!("no session token in cookie")),
-        Some(session_token) => {
-            let res = auth.authenticate_session(session_token).await?;
-            res.session
-        }
-    };
-
-    use schema::users::dsl::*;
-
-    let user: models::User = users
-        .filter(stytch_user_id.eq(session.user_id.clone()))
-        .get_result(db)
-        .await?;
-
-    Ok(Session {
-        user,
-        stytch: session,
-    })
 }
 
 #[axum::async_trait]
@@ -116,4 +87,72 @@ pub async fn create_user(
         .get_result(db)
         .await?;
     Ok(user)
+}
+
+pub async fn find_user(
+    db: &mut AsyncPgConnection,
+    stytch_user_id: String,
+) -> anyhow::Result<models::User> {
+    use schema::users::dsl as t;
+
+    let user: models::User = t::users
+        .filter(t::stytch_user_id.eq(stytch_user_id))
+        .get_result(db)
+        .await?;
+    Ok(user)
+}
+
+async fn find_session(
+    db: &mut AsyncPgConnection,
+    auth: &Auth,
+    cookies: PrivateCookieJar<cookie::Key>,
+) -> anyhow::Result<Session> {
+    let session_token = cookies
+        .get(SESSION_COOKIE_NAME)
+        .map(|c| c.value().to_string());
+
+    let session = match session_token {
+        None => return Err(anyhow::anyhow!("no session token in cookie")),
+        Some(session_token) => {
+            let res = auth.authenticate_session(session_token).await?;
+            res.session
+        }
+    };
+
+    use schema::users::dsl::*;
+
+    let user: models::User = users
+        .filter(stytch_user_id.eq(session.user_id.clone()))
+        .get_result(db)
+        .await?;
+
+    Ok(Session {
+        user,
+        stytch: session,
+    })
+}
+
+pub async fn revoke_session(
+    auth: &Auth,
+    cookies: PrivateCookieJar<cookie::Key>,
+) -> anyhow::Result<PrivateCookieJar<cookie::Key>> {
+    let session_token = cookies
+        .get(SESSION_COOKIE_NAME)
+        .map(|c| c.value().to_string());
+
+    let session_token = match session_token {
+        // Nothing to do!
+        None => return Ok(cookies),
+        Some(token) => token,
+    };
+
+    let _res = auth.revoke_session(session_token).await?;
+    Ok(cookies.remove(Cookie::new(SESSION_COOKIE_NAME, "")))
+}
+
+pub fn session_cookie(session_token: String) -> Cookie<'static> {
+    Cookie::build(SESSION_COOKIE_NAME, session_token)
+        .permanent()
+        .secure(true)
+        .finish()
 }
