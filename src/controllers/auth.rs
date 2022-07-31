@@ -4,24 +4,28 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
 };
-use axum_extra::extract::PrivateCookieJar;
+use axum_extra::{extract::PrivateCookieJar, routing::TypedPath};
 use serde::Deserialize;
 
 use crate::{auth, models};
 use crate::{AppError, Context, PgConn, Session};
 
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/auth/login")]
+pub struct Login;
+
 #[derive(Template)]
 #[template(path = "login.html")]
-struct Login {
+struct LoginPage {
     context: Context,
     user: Option<models::User>,
 }
 
-pub async fn login(context: Context, session: Option<Session>) -> impl IntoResponse {
+pub async fn login(_: Login, context: Context, session: Option<Session>) -> impl IntoResponse {
     // No need to show the login page if they're already logged in!
     match session.map(|s| s.user) {
         Some(_user) => Redirect::to("/").into_response(),
-        None => Login {
+        None => LoginPage {
             context,
             user: None,
         }
@@ -35,7 +39,17 @@ pub struct LoginForm {
     email: String,
 }
 
+#[derive(Template)]
+#[template(path = "login_confirmation.html")]
+struct LoginConfirmation {
+    context: Context,
+    user: Option<models::User>,
+
+    email: String,
+}
+
 pub async fn login_form(
+    _: Login,
     context: Context,
     session: Option<Session>,
     Extension(auth): Extension<auth::Auth>,
@@ -58,14 +72,9 @@ pub async fn login_form(
     })
 }
 
-#[derive(Template)]
-#[template(path = "login_confirmation.html")]
-struct LoginConfirmation {
-    context: Context,
-    user: Option<models::User>,
-
-    email: String,
-}
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/auth/authenticate")]
+pub struct Authenticate;
 
 #[derive(Deserialize)]
 pub struct AuthenticateQuery {
@@ -76,6 +85,7 @@ pub struct AuthenticateQuery {
 type AuthenticateResponse = (PrivateCookieJar, Redirect);
 
 pub async fn authenticate(
+    _: Authenticate,
     context: Context,
     session: Option<Session>,
     cookies: PrivateCookieJar,
@@ -106,11 +116,15 @@ pub async fn authenticate(
     }
 }
 
-pub async fn authenticate_head(cookies: PrivateCookieJar) -> AuthenticateResponse {
+pub async fn authenticate_head(_: Authenticate, cookies: PrivateCookieJar) -> AuthenticateResponse {
     let cookie = auth::session_cookie("".to_string());
     let redirect = Redirect::to("/");
     (cookies.add(cookie), redirect)
 }
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/auth/logout")]
+pub struct Logout;
 
 #[derive(Deserialize, Debug)]
 pub struct LogoutForm {
@@ -118,6 +132,7 @@ pub struct LogoutForm {
 }
 
 pub async fn logout(
+    _: Logout,
     context: Context,
     session: Option<Session>,
     cookies: PrivateCookieJar,
