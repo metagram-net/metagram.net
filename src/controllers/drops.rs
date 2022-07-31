@@ -1,0 +1,222 @@
+use askama::Template;
+use axum::{
+    extract::Form,
+    response::{IntoResponse, Redirect, Response},
+};
+use axum_extra::routing::TypedPath;
+use serde::Deserialize;
+use uuid::Uuid;
+
+use crate::firehose;
+use crate::models::{Drop, DropStatus, User};
+use crate::{Context, PgConn, Session};
+
+// TODO(named routes): Get these route builders somewhere that views can use them.
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/firehose/drops")]
+pub struct Collection;
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/firehose/drops/new")]
+pub struct New;
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/firehose/drops/:id")]
+pub struct Member {
+    id: Uuid,
+}
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/firehose/drops/:id/edit")]
+pub struct Edit {
+    id: Uuid,
+}
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/firehose/drops/:id/move")]
+pub struct Move {
+    id: Uuid,
+}
+
+pub async fn index(_: Collection) -> Redirect {
+    Redirect::to("/firehose/streams/unread")
+}
+
+// TODO: Form Option<String> with empty-to-None
+#[derive(Default, Deserialize)]
+pub struct DropForm {
+    title: String,
+    url: String,
+}
+
+#[derive(Template)]
+#[template(path = "firehose/drops/new.html")]
+struct NewDrop {
+    context: Context,
+    user: Option<User>,
+    drop: DropForm,
+}
+
+pub async fn new(_: New, context: Context, session: Session) -> impl IntoResponse {
+    NewDrop {
+        context,
+        user: Some(session.user),
+        drop: Default::default(),
+    }
+}
+
+pub async fn create(
+    _: Collection,
+    context: Context,
+    session: Session,
+    PgConn(mut db): PgConn,
+    Form(form): Form<DropForm>,
+) -> Result<Redirect, impl IntoResponse> {
+    let now = chrono::Utc::now();
+    let user = session.user;
+    let title = if form.title.is_empty() {
+        None
+    } else {
+        Some(form.title.clone())
+    };
+
+    // TODO: Validate the fields?
+    let drop = firehose::create_drop(&mut db, &user, title, form.url.clone(), now).await;
+    match drop {
+        Ok(drop) => Ok(Redirect::to(&format!("/firehose/drops/{}", drop.id))), // TODO: named route generation
+        Err(err) => {
+            tracing::error!({ ?err }, "could not create drop");
+            Err(NewDrop {
+                context,
+                user: Some(user),
+                drop: form,
+            })
+        }
+    }
+}
+
+#[derive(Template)]
+#[template(path = "firehose/drops/show.html")]
+struct Show {
+    context: Context,
+    user: Option<User>,
+    drop: Drop,
+}
+
+pub async fn show(
+    Member { id }: Member,
+    context: Context,
+    session: Session,
+    PgConn(mut db): PgConn,
+) -> Result<impl IntoResponse, Response> {
+    match firehose::find_drop(&mut db, &session.user, id).await {
+        Ok(drop) => Ok(Show {
+            context,
+            user: Some(session.user),
+            drop,
+        }),
+        Err(err) => Err(context.error(Some(session), err.into())),
+    }
+}
+
+#[derive(Template)]
+#[template(path = "firehose/drops/edit.html")]
+struct EditDrop {
+    context: Context,
+    user: Option<User>,
+    id: String,
+    drop: DropForm,
+}
+
+pub async fn edit(
+    Edit { id }: Edit,
+    context: Context,
+    session: Session,
+    PgConn(mut db): PgConn,
+) -> Result<impl IntoResponse, Response> {
+    let drop = firehose::find_drop(&mut db, &session.user, id).await;
+    match drop {
+        Ok(drop) => Ok(EditDrop {
+            context,
+            user: Some(session.user),
+            id: id.to_string(),
+            drop: DropForm {
+                title: drop.title.unwrap_or_default(),
+                url: drop.url,
+            },
+        }),
+        Err(err) => Err(context.error(Some(session), err.into())),
+    }
+}
+
+pub async fn update(
+    Member { id }: Member,
+    context: Context,
+    session: Session,
+    PgConn(mut db): PgConn,
+    Form(form): Form<DropForm>,
+) -> Result<Redirect, Response> {
+    let drop = match firehose::find_drop(&mut db, &session.user, id).await {
+        Ok(drop) => drop,
+        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+    };
+
+    let fields = {
+        let title = if form.title.is_empty() {
+            None
+        } else {
+            Some(form.title.clone())
+        };
+
+        let url = if form.url.is_empty() {
+            None
+        } else {
+            Some(form.url.clone())
+        };
+
+        firehose::DropFields { title, url }
+    };
+
+    let drop = firehose::update_drop(&mut db, &drop, fields).await;
+    match drop {
+        Ok(drop) => Ok(Redirect::to(&format!("/firehose/drops/{}", drop.id))), // TODO: named route generation
+        Err(err) => {
+            tracing::error!({ ?err }, "could not update drop");
+            Err(EditDrop {
+                context,
+                user: Some(session.user),
+                id: id.to_string(),
+                drop: form,
+            }
+            .into_response())
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct MoveForm {
+    status: DropStatus,
+}
+
+pub async fn r#move(
+    Move { id }: Move,
+    context: Context,
+    session: Session,
+    PgConn(mut db): PgConn,
+    Form(form): Form<MoveForm>,
+) -> Result<Redirect, impl IntoResponse> {
+    let now = chrono::Utc::now();
+
+    let drop = match firehose::find_drop(&mut db, &session.user, id).await {
+        Ok(drop) => drop,
+        Err(err) => return Err(context.error(Some(session), err.into())),
+    };
+
+    let drop = firehose::move_drop(&mut db, &drop, form.status, now).await;
+    match drop {
+        // TODO: redirect back to wherever you did this from
+        Ok(drop) => Ok(Redirect::to(&format!("/firehose/drops/{}", drop.id))), // TODO: named route generation
+        Err(err) => Err(context.error(Some(session), err.into())),
+    }
+}

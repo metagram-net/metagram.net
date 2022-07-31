@@ -7,8 +7,7 @@ use axum::{
     handler::Handler,
     http::{Request, StatusCode},
     response::{IntoResponse, IntoResponseParts, Response, ResponseParts},
-    routing::get,
-    Json, Router,
+    Router,
 };
 use axum_csrf::{CsrfLayer, CsrfToken};
 use axum_extra::routing::SpaRouter;
@@ -17,7 +16,6 @@ use diesel_async::{
     pooled_connection::deadpool::{self, Object, Pool},
     AsyncPgConnection,
 };
-use serde::Serialize;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -37,6 +35,9 @@ use auth::Session;
 pub use auth::{Auth, AuthN, MockAuthN};
 
 pub mod firehose;
+
+mod controllers;
+mod routes;
 
 type PgPool = Pool<AsyncPgConnection>;
 
@@ -76,13 +77,7 @@ pub struct Server {
 
 impl Server {
     pub async fn new(config: ServerConfig) -> anyhow::Result<Self> {
-        let router = Router::new()
-            .route("/", get(index))
-            .route("/.well-known/health-check", get(health_check))
-            .merge(auth::router())
-            .nest("/firehose", firehose::router())
-            .route("/whoops/500", get(whoops_500))
-            .route("/whoops/422", get(whoops_422))
+        let router = routes::build()
             // Apparently the SPA router is the easiest way to serve assets at a nested route.
             .merge(SpaRouter::new("/dist", "dist"))
             .fallback(not_found.into_service());
@@ -156,18 +151,6 @@ enum AppError {
 
     #[error(transparent)]
     Unhandled(#[from] anyhow::Error),
-}
-
-#[derive(Serialize)]
-struct Health {
-    status: String,
-}
-
-async fn health_check() -> Json<Health> {
-    let health = Health {
-        status: "Ok".to_string(),
-    };
-    Json(health)
 }
 
 #[derive(Clone, Derivative)]
@@ -267,20 +250,6 @@ impl IntoResponseParts for Context {
 }
 
 #[derive(Template)]
-#[template(path = "index.html")]
-struct Index {
-    context: Context,
-    user: Option<User>,
-}
-
-async fn index(context: Context, session: Option<Session>) -> impl IntoResponse {
-    Index {
-        context,
-        user: session.map(|s| s.user),
-    }
-}
-
-#[derive(Template)]
 #[template(path = "500_internal_server_error.html")]
 struct InternalServerError {
     context: Context,
@@ -306,14 +275,4 @@ async fn not_found(context: Context, session: Option<Session>) -> impl IntoRespo
         context,
         user: session.map(|s| s.user),
     }
-}
-
-async fn whoops_500(context: Context, session: Option<Session>) -> Response {
-    let err = anyhow::anyhow!("Hold my beverage!");
-    context.error(session, err.into())
-}
-
-async fn whoops_422(context: Context, session: Option<Session>) -> Response {
-    let err = AppError::CsrfMismatch;
-    context.error(session, err)
 }
