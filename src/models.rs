@@ -84,8 +84,17 @@ pub struct Drop {
 }
 
 impl Drop {
-    pub fn domain(&self) -> String {
-        "example.com".to_string() // TODO: Do the PSL thing
+    pub fn domain(&self) -> Option<String> {
+        use addr::psl::parse_domain_name;
+
+        let url = &self.url;
+        match parse_domain_name(url) {
+            Ok(domain) => Some(domain.to_string()),
+            Err(err) => {
+                tracing::error!({ ?err, ?url }, "URL without valid domain");
+                None
+            }
+        }
     }
 
     pub fn display_text(&self) -> String {

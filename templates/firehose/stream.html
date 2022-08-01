@@ -7,6 +7,7 @@
 {% else %}
 <ul class="border-b border-gray-50 dark:border-gray-700 last:border-b-0">
   {% for drop in drops %}
+  {# TODO: drop partial #}
   <div class="flex flex-col md:flex-row m-1 p-1">
     <div class="flex flex-col flex-grow">
       <span>
@@ -14,9 +15,13 @@
           {{ drop.display_text() }}
         </a>
       </span>
-      <span class="my-2">
-        {{ drop.domain() }}
-      </span>
+
+      {% match drop.domain() %}
+      {% when Some(domain) %}
+      <span class="my-2">{{ domain }}</span>
+      {% when None %}
+      {% endmatch %}
+
       {# TODO(tags): Render the tags here #}
     </div>
     {# TODO(writes): Render the actions here #}

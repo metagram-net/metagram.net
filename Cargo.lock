@@ -3,6 +3,16 @@
 version = 3
 
 [[package]]
+name = "addr"
+version = "0.15.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb028fa14f2f6843aa58b1a03c35bd9728dcb9c8292f758b85a8deb9811ad70f"
+dependencies = [
+ "psl",
+ "psl-types",
+]
+
+[[package]]
 name = "aead"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -621,6 +631,7 @@ dependencies = [
 name = "firehose"
 version = "0.1.0"
 dependencies = [
+ "addr",
  "anyhow",
  "askama",
  "askama_axum",
@@ -1556,6 +1567,21 @@ checksum = "c54b25569025b7fc9651de43004ae593a75ad88543b17178aa5e1b9c4f15f56f"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "psl"
+version = "2.0.90"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e9c7d362659b525758d09e2a3ae965e371b347605e5fb2bc5bec5c2a1ecf41b"
+dependencies = [
+ "psl-types",
+]
+
+[[package]]
+name = "psl-types"
+version = "2.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8eda7c62d9ecaafdf8b62374c006de0adf61666ae96a96ba74a37134aa4e470"
 
 [[package]]
 name = "quote"
