@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros.html" as macros %}
 
 {% block main %}
 <h1>Edit Drop</h1>
@@ -7,33 +8,9 @@
   method="POST"
   action="{{ crate::controllers::drops::Member::path(id) }}"
 >
-  {# TODO: show form errors #}
+  {% call macros::form_errors("Drop", drop.errors) %}
 
-  <div>
-    <label for="title">Title</label>
-    <div>
-      <input
-          type="text"
-          name="title"
-          class="w-full truncate"
-          autofocus
-          value="{{ drop.title }}"
-      />
-    </div>
-  </div>
-
-  <div>
-    <label for="url">URL</label>
-    <div>
-      <input
-          type="text"
-          name="url"
-          class="w-full truncate"
-          autofocus
-          value="{{ drop.url }}"
-      />
-    </div>
-  </div>
+  {% include "_fields.html" %}
 
   {# TODO(tags): multi-select tags #}
 

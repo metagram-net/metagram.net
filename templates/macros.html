@@ -1,0 +1,17 @@
+{% macro form_errors(resource, errors) %}
+  {% match errors %}
+  {% when Some(errors) %}
+  <div class="alert">
+    <p>
+      {{ errors.len()|pluralize("error") }}
+      prevented this {{ resource }} from being saved:
+    </p>
+    <ul class="list-bulleted">
+      {% for error in errors %}
+      <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% when None %}
+  {% endmatch %}
+{% endmacro %}

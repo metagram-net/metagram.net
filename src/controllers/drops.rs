@@ -8,6 +8,7 @@ use axum_extra::routing::TypedPath;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::filters;
 use crate::firehose;
 use crate::models::{Drop, DropStatus, User};
 use crate::{BaseUrl, Context, PgConn, Session};
@@ -48,11 +49,31 @@ pub async fn index(_: Collection) -> Redirect {
     Redirect::to("/firehose/streams/unread")
 }
 
-// TODO: Form Option<String> with empty-to-None
 #[derive(Default, Deserialize)]
 pub struct DropForm {
     title: String,
     url: String,
+
+    errors: Option<Vec<String>>,
+}
+
+impl DropForm {
+    fn validate(&self) -> Result<(), Vec<String>> {
+        if let Some(errors) = &self.errors {
+            return Err(errors.to_vec());
+        }
+
+        let mut errors = Vec::new();
+        if self.url.is_empty() {
+            errors.push("URL cannot be blank".to_string());
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
 }
 
 #[derive(Template)]
@@ -84,17 +105,18 @@ pub async fn create(
     session: Session,
     Extension(base_url): Extension<BaseUrl>,
     PgConn(mut db): PgConn,
-    Form(form): Form<DropForm>,
+    Form(mut form): Form<DropForm>,
 ) -> Result<Redirect, impl IntoResponse> {
     let now = chrono::Utc::now();
     let user = session.user;
-    let title = if form.title.is_empty() {
-        None
-    } else {
-        Some(form.title.clone())
-    };
+    let title = coerce_empty(form.title.clone());
 
-    // TODO: Validate the fields?
+    let errors = match form.validate() {
+        Ok(_) => None,
+        Err(errors) => Some(errors),
+    };
+    form.errors = errors;
+
     let drop = firehose::create_drop(&mut db, &user, title, form.url.clone(), now).await;
     match drop {
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
@@ -158,6 +180,7 @@ pub async fn edit(
             drop: DropForm {
                 title: drop.title.unwrap_or_default(),
                 url: drop.url,
+                errors: None,
             },
         }),
         Err(err) => Err(context.error(Some(session), err.into())),
@@ -176,20 +199,9 @@ pub async fn update(
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
-    let fields = {
-        let title = if form.title.is_empty() {
-            None
-        } else {
-            Some(form.title.clone())
-        };
-
-        let url = if form.url.is_empty() {
-            None
-        } else {
-            Some(form.url.clone())
-        };
-
-        firehose::DropFields { title, url }
+    let fields = firehose::DropFields {
+        title: coerce_empty(form.title.clone()),
+        url: coerce_empty(form.url.clone()),
     };
 
     let drop = firehose::update_drop(&mut db, &drop, fields).await;
@@ -243,6 +255,14 @@ fn bookmarklet(base_url: url::Url) -> String {
         r#"javascript:(function(){{location.href="{}?title="+encodeURIComponent(document.title)+"&url="+encodeURIComponent(document.URL);}})();"#,
         href
     )
+}
+
+fn coerce_empty(s: String) -> Option<String> {
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 #[cfg(test)]

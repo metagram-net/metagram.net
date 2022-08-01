@@ -37,6 +37,7 @@ pub use auth::{Auth, AuthN, MockAuthN};
 pub mod firehose;
 
 mod controllers;
+mod filters;
 mod routes;
 
 type PgPool = Pool<AsyncPgConnection>;
