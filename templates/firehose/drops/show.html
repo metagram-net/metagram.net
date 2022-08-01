@@ -1,23 +1,5 @@
 {% extends "base.html" %}
 
 {% block main %}
-{# TODO: drop partial #}
-<div class="flex flex-col md:flex-row m-1 p-1">
-  <div class="flex flex-col flex-grow">
-    <span>
-      <a class="no-underline text-2xl break-words" href="{{ drop.url }}">
-        {{ drop.display_text() }}
-      </a>
-    </span>
-
-    {% match drop.domain() %}
-    {% when Some(domain) %}
-    <span class="my-2">{{ domain }}</span>
-    {% when None %}
-    {% endmatch %}
-
-    {# TODO(tags): Render the tags here #}
-  </div>
-  {# TODO(writes): Render the actions here #}
-</div>
+{% include "_component.html" %}
 {% endblock %}
