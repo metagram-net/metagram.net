@@ -65,10 +65,14 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct BaseUrl(url::Url);
+
 pub struct ServerConfig {
+    pub auth: auth::Auth,
+    pub base_url: url::Url,
     pub cookie_key: cookie::Key,
     pub database_pool: PgPool,
-    pub auth: auth::Auth,
 }
 
 pub struct Server {
@@ -104,6 +108,7 @@ impl Server {
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
+            .layer(Extension::<BaseUrl>(BaseUrl(config.base_url)))
             .layer(Extension::<PgPool>(config.database_pool))
             .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
             .layer(Extension::<auth::Auth>(config.auth))

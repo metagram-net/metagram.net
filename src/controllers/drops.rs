@@ -2,6 +2,7 @@ use askama::Template;
 use axum::{
     extract::Form,
     response::{IntoResponse, Redirect, Response},
+    Extension,
 };
 use axum_extra::routing::TypedPath;
 use serde::Deserialize;
@@ -9,7 +10,7 @@ use uuid::Uuid;
 
 use crate::firehose;
 use crate::models::{Drop, DropStatus, User};
-use crate::{Context, PgConn, Session};
+use crate::{BaseUrl, Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/drops")]
@@ -60,13 +61,20 @@ struct NewDrop {
     context: Context,
     user: Option<User>,
     drop: DropForm,
+    bookmarklet: String,
 }
 
-pub async fn new(_: New, context: Context, session: Session) -> impl IntoResponse {
+pub async fn new(
+    _: New,
+    Extension(base_url): Extension<BaseUrl>,
+    context: Context,
+    session: Session,
+) -> impl IntoResponse {
     NewDrop {
         context,
         user: Some(session.user),
         drop: Default::default(),
+        bookmarklet: bookmarklet(base_url.0),
     }
 }
 
@@ -74,6 +82,7 @@ pub async fn create(
     _: Collection,
     context: Context,
     session: Session,
+    Extension(base_url): Extension<BaseUrl>,
     PgConn(mut db): PgConn,
     Form(form): Form<DropForm>,
 ) -> Result<Redirect, impl IntoResponse> {
@@ -95,6 +104,7 @@ pub async fn create(
                 context,
                 user: Some(user),
                 drop: form,
+                bookmarklet: bookmarklet(base_url.0),
             })
         }
     }
@@ -222,5 +232,30 @@ pub async fn r#move(
         // TODO: redirect back to wherever you did this from
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
         Err(err) => Err(context.error(Some(session), err.into())),
+    }
+}
+
+fn bookmarklet(base_url: url::Url) -> String {
+    // let href = crate::controllers::drops::New.to_string();
+    let href = base_url.join(&New.to_string()).unwrap();
+
+    format!(
+        r#"javascript:(function(){{location.href="{}?title="+encodeURIComponent(document.title)+"&url="+encodeURIComponent(document.URL);}})();"#,
+        href
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bookmarklet_href() -> anyhow::Result<()> {
+        let expected = r#"javascript:(function(){location.href="https://example.net/firehose/drops/new?title="+encodeURIComponent(document.title)+"&url="+encodeURIComponent(document.URL);})();"#;
+        assert_eq!(
+            expected,
+            bookmarklet(url::Url::parse("https://example.net")?),
+        );
+        Ok(())
     }
 }

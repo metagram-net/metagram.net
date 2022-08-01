@@ -30,6 +30,8 @@ async fn main() {
         Err(err) => panic!("{:#?}", err),
     };
 
+    let base_url = url::Url::parse(&config.base_url).expect("BASE_URL should be a valid URL");
+
     let cookie_key = {
         let key = base64::decode(config.cookie_key).expect("COOKIE_KEY should be valid base64");
         cookie::Key::from(&key)
@@ -68,6 +70,7 @@ async fn main() {
 
     let srv = firehose::Server::new(firehose::ServerConfig {
         auth,
+        base_url,
         cookie_key,
         database_pool,
     })
