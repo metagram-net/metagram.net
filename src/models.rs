@@ -86,12 +86,20 @@ pub struct Drop {
 impl Drop {
     pub fn domain(&self) -> Option<String> {
         use addr::psl::parse_domain_name;
+        use url::Url;
 
         let url = &self.url;
         match parse_domain_name(url) {
-            Ok(domain) => Some(domain.to_string()),
+            Ok(domain) => return Some(domain.to_string()),
             Err(err) => {
                 tracing::error!({ ?err, ?url }, "URL without valid domain");
+            }
+        };
+
+        match Url::parse(url) {
+            Ok(url) => url.domain().map(|s| s.to_string()),
+            Err(err) => {
+                tracing::error!({ ?err, ?url }, "unparseable URL");
                 None
             }
         }
