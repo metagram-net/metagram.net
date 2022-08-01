@@ -88,18 +88,19 @@ impl Drop {
         use addr::psl::parse_domain_name;
         use url::Url;
 
-        let url = &self.url;
-        match parse_domain_name(url) {
-            Ok(domain) => return Some(domain.to_string()),
+        let url = self.url.clone();
+        let domain = match Url::parse(&url) {
+            Ok(url) => url.domain().map(|s| s.to_string()).unwrap_or_default(),
             Err(err) => {
-                tracing::error!({ ?err, ?url }, "URL without valid domain");
+                tracing::error!({ ?err, ?url }, "unparseable URL");
+                return None;
             }
         };
 
-        match Url::parse(url) {
-            Ok(url) => url.domain().map(|s| s.to_string()),
+        match parse_domain_name(&domain) {
+            Ok(domain) => Some(domain.to_string()),
             Err(err) => {
-                tracing::error!({ ?err, ?url }, "unparseable URL");
+                tracing::error!({ ?err, ?url }, "URL without valid domain");
                 None
             }
         }
@@ -118,4 +119,36 @@ pub struct NewDrop<'a> {
     pub url: &'a str,
     pub status: DropStatus,
     pub moved_at: Timestamp,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn render_domain() {
+        let d = drop(None, "https://example.net/something".to_string());
+        assert_eq!(d.domain(), Some("example.net".to_string()));
+
+        let d = drop(None, "https://example.pvt.k12.ma.us".to_string());
+        assert_eq!(d.domain(), Some("example.pvt.k12.ma.us".to_string()));
+
+        let d = drop(None, "https:///".to_string());
+        assert_eq!(d.domain(), None);
+    }
+
+    fn drop(title: Option<String>, url: String) -> Drop {
+        let now = chrono::Utc::now().naive_utc();
+        Drop {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            title,
+            url,
+            status: DropStatus::Unread,
+            moved_at: now,
+            created_at: now,
+            updated_at: now,
+        }
+    }
 }
