@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+
+{% block main %}
+<h1>New Tag</h1>
+
+<form
+  method="POST"
+  action="{{ crate::controllers::tags::Collection.to_string() }}"
+>
+  {% call macros::form_errors("Tag", tag.errors) %}
+
+  {% include "_fields.html" %}
+
+  {# TODO: recommend some nice colors #}
+
+  <div>
+    <button type="submit" class="btn btn-gray">Create Tag</button>
+  </div>
+</form>
+{% endblock %}

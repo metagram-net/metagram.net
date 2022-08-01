@@ -4,7 +4,7 @@ use axum_extra::routing::TypedPath;
 use serde::Deserialize;
 
 use crate::firehose;
-use crate::models::{Drop, DropStatus, User};
+use crate::models::{DropStatus, User};
 use crate::{Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
@@ -24,7 +24,7 @@ impl Member {
 struct ShowPage {
     context: Context,
     user: Option<User>,
-    drops: Vec<Drop>,
+    drops: Vec<firehose::Drop>,
 }
 
 pub async fn show(
@@ -33,7 +33,7 @@ pub async fn show(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let drops: anyhow::Result<Vec<Drop>> = match id.as_str() {
+    let drops: anyhow::Result<Vec<firehose::Drop>> = match id.as_str() {
         "unread" => firehose::list_drops(&mut db, session.user.clone(), DropStatus::Unread).await,
         "read" => firehose::list_drops(&mut db, session.user.clone(), DropStatus::Read).await,
         "saved" => firehose::list_drops(&mut db, session.user.clone(), DropStatus::Saved).await,

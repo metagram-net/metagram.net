@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::filters;
 use crate::firehose;
-use crate::models::{Drop, DropStatus, User};
+use crate::models::{DropStatus, User};
 use crate::{BaseUrl, Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
@@ -108,23 +108,22 @@ pub async fn create(
     Form(mut form): Form<DropForm>,
 ) -> Result<Redirect, impl IntoResponse> {
     let now = chrono::Utc::now();
-    let user = session.user;
-    let title = coerce_empty(form.title.clone());
-
     let errors = match form.validate() {
         Ok(_) => None,
         Err(errors) => Some(errors),
     };
     form.errors = errors;
 
-    let drop = firehose::create_drop(&mut db, &user, title, form.url.clone(), now).await;
+    let title = coerce_empty(form.title.clone());
+
+    let drop = firehose::create_drop(&mut db, &session.user, title, form.url.clone(), now).await;
     match drop {
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {
             tracing::error!({ ?err }, "could not create drop");
             Err(NewDrop {
                 context,
-                user: Some(user),
+                user: Some(session.user),
                 drop: form,
                 bookmarklet: bookmarklet(base_url.0),
             })
@@ -137,7 +136,7 @@ pub async fn create(
 struct Show {
     context: Context,
     user: Option<User>,
-    drop: Drop,
+    drop: firehose::Drop,
 }
 
 pub async fn show(
@@ -178,8 +177,8 @@ pub async fn edit(
             user: Some(session.user),
             id,
             drop: DropForm {
-                title: drop.title.unwrap_or_default(),
-                url: drop.url,
+                title: drop.drop.title.unwrap_or_default(),
+                url: drop.drop.url,
                 errors: None,
             },
         }),
@@ -206,7 +205,7 @@ pub async fn update(
 
     let drop = firehose::update_drop(&mut db, &drop, fields).await;
     match drop {
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {
             tracing::error!({ ?err }, "could not update drop");
             Err(EditDrop {
@@ -242,7 +241,7 @@ pub async fn r#move(
     let drop = firehose::move_drop(&mut db, &drop, form.status, now).await;
     match drop {
         // TODO: redirect back to wherever you did this from
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => Err(context.error(Some(session), err.into())),
     }
 }
@@ -257,6 +256,7 @@ fn bookmarklet(base_url: url::Url) -> String {
     )
 }
 
+// TODO: util?
 fn coerce_empty(s: String) -> Option<String> {
     if s.is_empty() {
         None

@@ -1,0 +1,7 @@
+<a
+  href="{{ crate::controllers::tags::Member::path(tag.id) }}"
+  class="no-underline border-b-4 hover:text-mg"
+  style="border-color: {{ tag.color }}; --mg-color: {{ tag.color }}"
+>
+  {{ tag.name }}
+</a>

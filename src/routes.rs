@@ -25,6 +25,12 @@ pub fn build() -> Router {
         .typed_get(drops::edit)
         .typed_post(drops::update)
         .typed_post(drops::r#move)
+        .typed_get(tags::index)
+        .typed_get(tags::new)
+        .typed_post(tags::create)
+        .typed_get(tags::show)
+        .typed_get(tags::edit)
+        .typed_post(tags::update)
         .typed_get(errors::internal_server_error)
         .typed_get(errors::unprocessable_entity)
 }

@@ -2,6 +2,17 @@ table! {
     use diesel::sql_types::*;
     use crate::sql_types::*;
 
+    drop_tags (id) {
+        id -> Uuid,
+        drop_id -> Uuid,
+        tag_id -> Uuid,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use crate::sql_types::*;
+
     drops (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -9,6 +20,20 @@ table! {
         url -> Text,
         status -> Drop_status,
         moved_at -> Timestamp,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use crate::sql_types::*;
+
+    tags (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        name -> Text,
+        color -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -26,6 +51,14 @@ table! {
     }
 }
 
+joinable!(drop_tags -> drops (drop_id));
+joinable!(drop_tags -> tags (tag_id));
 joinable!(drops -> users (user_id));
+joinable!(tags -> users (user_id));
 
-allow_tables_to_appear_in_same_query!(drops, users,);
+allow_tables_to_appear_in_same_query!(
+    drop_tags,
+    drops,
+    tags,
+    users,
+);

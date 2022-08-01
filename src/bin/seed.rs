@@ -59,7 +59,7 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
         };
 
         let drop = fh::create_drop(db, &user, title, article.url, chrono::Utc::now()).await?;
-        println!("Created drop: {}", drop.id);
+        println!("Created drop: {}", drop.drop.id);
     }
 
     // TODO(tags): Create a bunch of fake tags.

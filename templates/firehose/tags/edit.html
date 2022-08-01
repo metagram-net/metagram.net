@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% import "macros.html" as macros %}
+
+{% block main %}
+<h1>Edit Tag</h1>
+
+<form
+  method="POST"
+  action="{{ crate::controllers::tags::Member::path(id) }}"
+>
+  {% call macros::form_errors("Tag", tag.errors) %}
+
+  {% include "_fields.html" %}
+
+  {# TODO: recommend some nice colors #}
+
+  <div>
+    <button type="submit" class="btn btn-gray">Save Tag</button>
+  </div>
+</form>
+{% endblock %}

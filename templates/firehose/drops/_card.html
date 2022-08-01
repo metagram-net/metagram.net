@@ -1,3 +1,6 @@
+{% let tags = drop.tags.clone() %}
+{% let drop = drop.drop.clone() %}
+
 <div class="flex flex-col md:flex-row m-1 p-1">
   <div class="flex flex-col flex-grow">
     <span>
@@ -12,7 +15,10 @@
     {% when None %}
     {% endmatch %}
 
-    {# TODO(tags): Render the tags here #}
+    {% for tag in tags %}
+      {% include "firehose/tags/_badge.html" %}
+    {% endfor %}
   </div>
+
   {# TODO(writes): Render the actions here #}
 </div>

@@ -14,7 +14,7 @@ use crate::{schema, sql_types};
 // Remember: using `#[derive(Queryable)]` assumes that the order of fields on the `Model` struct
 // matches the order of columns in the `models` table (stored in `schema.rs`).
 
-#[derive(Queryable, Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
 pub struct User {
     pub id: Uuid,
     pub stytch_user_id: String,
@@ -70,8 +70,9 @@ impl FromSql<sql_types::Drop_status, Pg> for DropStatus {
     }
 }
 
-#[derive(Queryable, Identifiable, Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
 #[diesel(table_name=schema::drops)]
+#[diesel(belongs_to(User))]
 pub struct Drop {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -111,14 +112,45 @@ impl Drop {
     }
 }
 
-#[derive(Deserialize, Insertable, Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Insertable, Associations)]
 #[diesel(table_name = schema::drops)]
+#[diesel(belongs_to(User))]
 pub struct NewDrop<'a> {
     pub user_id: Uuid,
     pub title: Option<&'a str>,
     pub url: &'a str,
     pub status: DropStatus,
     pub moved_at: Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
+#[diesel(table_name=schema::tags)]
+#[diesel(belongs_to(User))]
+pub struct Tag {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub color: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Deserialize, Insertable, Debug, Clone)]
+#[diesel(table_name = schema::tags)]
+pub struct NewTag<'a> {
+    pub user_id: Uuid,
+    pub name: &'a str,
+    pub color: &'a str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
+#[diesel(table_name = schema::drop_tags)]
+#[diesel(belongs_to(Drop))]
+#[diesel(belongs_to(Tag))]
+pub struct DropTag {
+    pub id: Uuid,
+    pub drop_id: Uuid,
+    pub tag_id: Uuid,
 }
 
 #[cfg(test)]
