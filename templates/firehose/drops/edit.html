@@ -3,8 +3,10 @@
 {% block main %}
 <h1>Edit Drop</h1>
 
-{# TODO: named routes -> paths #}
-<form method="POST" action="/firehose/drops/{{ id }}">
+<form
+  method="POST"
+  action="{{ crate::controllers::drops::Member::path(id) }}"
+>
   {# TODO: show form errors #}
 
   <div>

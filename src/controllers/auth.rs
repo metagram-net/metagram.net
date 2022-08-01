@@ -15,7 +15,7 @@ use crate::{AppError, Context, PgConn, Session};
 pub struct Login;
 
 #[derive(Template)]
-#[template(path = "login.html")]
+#[template(path = "auth/login.html")]
 struct LoginPage {
     context: Context,
     user: Option<models::User>,
@@ -40,7 +40,7 @@ pub struct LoginForm {
 }
 
 #[derive(Template)]
-#[template(path = "login_confirmation.html")]
+#[template(path = "auth/login_confirmation.html")]
 struct LoginConfirmation {
     context: Context,
     user: Option<models::User>,

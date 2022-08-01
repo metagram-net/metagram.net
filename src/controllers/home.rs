@@ -11,7 +11,7 @@ use crate::{Context, Session};
 pub struct Root;
 
 #[derive(Template)]
-#[template(path = "index.html")]
+#[template(path = "home/index.html")]
 struct Index {
     context: Context,
     user: Option<User>,
@@ -38,4 +38,22 @@ pub async fn health_check(_: HealthCheck) -> impl IntoResponse {
         status: "Ok".to_string(),
     };
     Json(health)
+}
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/about")]
+pub struct About;
+
+#[derive(Template)]
+#[template(path = "home/about.html")]
+struct AboutPage {
+    context: Context,
+    user: Option<User>,
+}
+
+pub async fn about(_: About, context: Context, session: Option<Session>) -> impl IntoResponse {
+    AboutPage {
+        context,
+        user: session.map(|s| s.user),
+    }
 }

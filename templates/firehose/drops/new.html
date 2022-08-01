@@ -3,19 +3,21 @@
 {% block main %}
 <h1>New Drop</h1>
 
-{# TODO: named routes -> paths #}
-<form method="POST" action="/firehose/drops">
+<form
+  method="POST"
+  action="{{ crate::controllers::drops::Collection.to_string() }}"
+>
   {# TODO: show form errors #}
 
   <div>
     <label for="title">Title</label>
     <div>
       <input
-          type="text"
-          name="title"
-          class="w-full truncate"
-          autofocus
-          value="{{ drop.title }}"
+        type="text"
+        name="title"
+        class="w-full truncate"
+        autofocus
+        value="{{ drop.title }}"
       />
     </div>
   </div>
@@ -24,11 +26,11 @@
     <label for="url">URL</label>
     <div>
       <input
-          type="text"
-          name="url"
-          class="w-full truncate"
-          autofocus
-          value="{{ drop.url }}"
+        type="text"
+        name="url"
+        class="w-full truncate"
+        autofocus
+        value="{{ drop.url }}"
       />
     </div>
   </div>

@@ -11,8 +11,6 @@ use crate::firehose;
 use crate::models::{Drop, DropStatus, User};
 use crate::{Context, PgConn, Session};
 
-// TODO(named routes): Get these route builders somewhere that views can use them.
-
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/drops")]
 pub struct Collection;
@@ -25,6 +23,12 @@ pub struct New;
 #[typed_path("/firehose/drops/:id")]
 pub struct Member {
     id: Uuid,
+}
+
+impl Member {
+    pub fn path(id: &Uuid) -> String {
+        Self { id: *id }.to_string()
+    }
 }
 
 #[derive(TypedPath, Deserialize)]
@@ -84,7 +88,7 @@ pub async fn create(
     // TODO: Validate the fields?
     let drop = firehose::create_drop(&mut db, &user, title, form.url.clone(), now).await;
     match drop {
-        Ok(drop) => Ok(Redirect::to(&format!("/firehose/drops/{}", drop.id))), // TODO: named route generation
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
         Err(err) => {
             tracing::error!({ ?err }, "could not create drop");
             Err(NewDrop {
@@ -125,7 +129,7 @@ pub async fn show(
 struct EditDrop {
     context: Context,
     user: Option<User>,
-    id: String,
+    id: Uuid,
     drop: DropForm,
 }
 
@@ -140,7 +144,7 @@ pub async fn edit(
         Ok(drop) => Ok(EditDrop {
             context,
             user: Some(session.user),
-            id: id.to_string(),
+            id,
             drop: DropForm {
                 title: drop.title.unwrap_or_default(),
                 url: drop.url,
@@ -180,13 +184,13 @@ pub async fn update(
 
     let drop = firehose::update_drop(&mut db, &drop, fields).await;
     match drop {
-        Ok(drop) => Ok(Redirect::to(&format!("/firehose/drops/{}", drop.id))), // TODO: named route generation
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
         Err(err) => {
             tracing::error!({ ?err }, "could not update drop");
             Err(EditDrop {
                 context,
                 user: Some(session.user),
-                id: id.to_string(),
+                id,
                 drop: form,
             }
             .into_response())
@@ -216,7 +220,7 @@ pub async fn r#move(
     let drop = firehose::move_drop(&mut db, &drop, form.status, now).await;
     match drop {
         // TODO: redirect back to wherever you did this from
-        Ok(drop) => Ok(Redirect::to(&format!("/firehose/drops/{}", drop.id))), // TODO: named route generation
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.id }.to_string())),
         Err(err) => Err(context.error(Some(session), err.into())),
     }
 }

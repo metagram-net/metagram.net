@@ -20,15 +20,14 @@
     <nav class="bg-gray-50 dark:bg-gray-800 py-1 px-2">
       <ul class="md:flex md:justify-between">
         <div class="md:flex md:space-x-4">
-          {# TODO(named routes): use them here #}
-          <li><a href="/">Metagram</a>
-          <li><a href="/firehose">Firehose</a>
-          <li><a href="/about">About</a>
+          <li><a href="{{ crate::controllers::home::Root.to_string() }}">Metagram</a></li>
+          <li><a href="{{ crate::controllers::firehose::Root.to_string() }}">Firehose</a></li>
+          <li><a href="{{ crate::controllers::home::About.to_string() }}">About</a></li>
         </div>
         <div class="md:flex md:space-x-4">
           {% match user %}
           {% when Some(user) %}
-          <form method="POST" action="/logout">
+          <form method="POST" action="{{ crate::controllers::auth::Logout.to_string() }}">
             <input
               type="hidden"
               name="authenticity_token"
@@ -37,7 +36,7 @@
             <button type="submit">Log out</button>
           </form>
           {% when None %}
-          <a href="/login">Log in</a>
+          <a href="{{ crate::controllers::auth::Login.to_string() }}">Log in</a>
           {% endmatch %}
         </div>
       </ul>

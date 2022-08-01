@@ -7,5 +7,8 @@
 
 <p>Look for an email from login@stytch.com.</p>
 
-<p>Didn't get the email? <a href="/login">Request another one.</a></p>
+<p>
+  Didn't get the email?
+  <a href="{{ crate::controllers::auth::Login.to_string() }}">Request another one.</a>
+</p>
 {% endblock %}

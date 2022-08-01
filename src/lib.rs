@@ -250,21 +250,21 @@ impl IntoResponseParts for Context {
 }
 
 #[derive(Template)]
-#[template(path = "500_internal_server_error.html")]
+#[template(path = "errors/500_internal_server_error.html")]
 struct InternalServerError {
     context: Context,
     user: Option<User>,
 }
 
 #[derive(Template)]
-#[template(path = "422_unprocessable_entity.html")]
+#[template(path = "errors/422_unprocessable_entity.html")]
 struct UnprocessableEntity {
     context: Context,
     user: Option<User>,
 }
 
 #[derive(Template)]
-#[template(path = "404_not_found.html")]
+#[template(path = "errors/404_not_found.html")]
 struct NotFound {
     context: Context,
     user: Option<User>,

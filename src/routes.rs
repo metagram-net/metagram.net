@@ -8,6 +8,7 @@ pub fn build() -> Router {
 
     Router::new()
         .typed_get(home::index)
+        .typed_get(home::about)
         .typed_get(home::health_check)
         .typed_get(auth::login)
         .typed_post(auth::login_form)

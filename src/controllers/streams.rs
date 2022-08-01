@@ -9,8 +9,14 @@ use crate::{Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/streams/:id")]
-pub struct Login {
+pub struct Member {
     id: String,
+}
+
+impl Member {
+    pub fn path(id: &str) -> String {
+        Self { id: id.to_string() }.to_string()
+    }
 }
 
 #[derive(Template)]
@@ -22,7 +28,7 @@ struct ShowPage {
 }
 
 pub async fn show(
-    Login { id }: Login,
+    Member { id }: Member,
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
