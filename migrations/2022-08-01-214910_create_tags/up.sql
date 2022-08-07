@@ -14,7 +14,9 @@ select diesel_manage_updated_at('tags');
 create table drop_tags (
     id uuid primary key default gen_random_uuid(),
     drop_id uuid references drops(id) not null,
-    tag_id uuid references tags(id) not null
+    tag_id uuid references tags(id) not null,
+
+    unique (drop_id, tag_id)
 );
 
 select diesel_manage_updated_at('drop_tags');
