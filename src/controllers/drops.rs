@@ -203,7 +203,7 @@ pub async fn update(
         url: coerce_empty(form.url.clone()),
     };
 
-    let drop = firehose::update_drop(&mut db, &drop, fields).await;
+    let drop = firehose::update_drop(&mut db, drop, fields).await;
     match drop {
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {
@@ -238,7 +238,7 @@ pub async fn r#move(
         Err(err) => return Err(context.error(Some(session), err.into())),
     };
 
-    let drop = firehose::move_drop(&mut db, &drop, form.status, now).await;
+    let drop = firehose::move_drop(&mut db, drop, form.status, now).await;
     match drop {
         // TODO: redirect back to wherever you did this from
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
