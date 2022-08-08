@@ -49,6 +49,8 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
     let user = auth::create_user(db, args.stytch_user_id).await?;
     println!("Created user: {}", user.id);
 
+    // TODO(tags): Create a bunch of fake tags.
+
     for _ in 0..NUM_DROPS {
         let article: Article = Title(1..10).fake_with_rng(&mut rng);
 
@@ -58,12 +60,21 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
             None
         };
 
-        let drop = fh::create_drop(db, &user, title, article.url, chrono::Utc::now()).await?;
+        let tags = vec![]; // TODO(tags): create with tags
+
+        let drop = fh::create_drop(
+            db,
+            user.clone(),
+            title,
+            article.url,
+            Some(tags),
+            chrono::Utc::now(),
+        )
+        .await?;
         println!("Created drop: {}", drop.drop.id);
     }
 
-    // TODO(tags): Create a bunch of fake tags.
-    // TODO(tags): Create some streams out of some of those tags.
+    // TODO(streams): Create some streams out of some of those tags.
 
     Ok(())
 }

@@ -116,7 +116,17 @@ pub async fn create(
 
     let title = coerce_empty(form.title.clone());
 
-    let drop = firehose::create_drop(&mut db, &session.user, title, form.url.clone(), now).await;
+    let tags = vec![]; // TODO(tags): create with tags
+
+    let drop = firehose::create_drop(
+        &mut db,
+        session.user.clone(),
+        title,
+        form.url.clone(),
+        Some(tags),
+        now,
+    )
+    .await;
     match drop {
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {
@@ -203,7 +213,8 @@ pub async fn update(
         url: coerce_empty(form.url.clone()),
     };
 
-    let drop = firehose::update_drop(&mut db, drop, fields).await;
+    let tags = vec![]; // TODO(tags): set tags
+    let drop = firehose::update_drop(&mut db, session.user.clone(), drop, fields, Some(tags)).await;
     match drop {
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {

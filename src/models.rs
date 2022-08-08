@@ -135,6 +135,10 @@ pub struct Tag {
     pub updated_at: Timestamp,
 }
 
+impl Tag {
+    pub const DEFAULT_COLOR: &'static str = "#EEEEEE";
+}
+
 #[derive(Deserialize, Insertable, Debug, Clone)]
 #[diesel(table_name = schema::tags)]
 pub struct NewTag<'a> {
@@ -149,6 +153,13 @@ pub struct NewTag<'a> {
 #[diesel(belongs_to(Tag))]
 pub struct DropTag {
     pub id: Uuid,
+    pub drop_id: Uuid,
+    pub tag_id: Uuid,
+}
+
+#[derive(Deserialize, Insertable, Debug, Clone)]
+#[diesel(table_name = schema::drop_tags)]
+pub struct NewDropTag {
     pub drop_id: Uuid,
     pub tag_id: Uuid,
 }

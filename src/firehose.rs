@@ -1,7 +1,9 @@
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use uuid::Uuid;
 
-use crate::models::{Drop as DropRecord, DropStatus, DropTag, NewDrop, NewTag, Tag, User};
+use crate::models::{
+    Drop as DropRecord, DropStatus, DropTag, NewDrop, NewDropTag, NewTag, Tag, User,
+};
 use crate::schema;
 
 pub struct Drop {
@@ -47,11 +49,7 @@ pub async fn list_drops(
     .await
 }
 
-pub async fn find_drop(
-    db: &mut AsyncPgConnection,
-    user: &User,
-    id: uuid::Uuid,
-) -> anyhow::Result<Drop> {
+pub async fn find_drop(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> anyhow::Result<Drop> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
     use schema::drops::dsl as d;
@@ -94,23 +92,21 @@ async fn load_drop_tags(
 
 pub async fn create_drop(
     db: &mut AsyncPgConnection,
-    user: &User,
+    user: User,
     title: Option<String>,
     url: String,
+    tags: Option<Vec<TagSelector>>,
     now: chrono::DateTime<chrono::Utc>,
-    // TODO(tags): set tags
 ) -> anyhow::Result<Drop> {
     use diesel::insert_into;
     use diesel_async::RunQueryDsl;
     use schema::drops::dsl as t;
 
     db.transaction::<Drop, anyhow::Error, _>(|conn| {
-        let user_id = user.id;
-
         Box::pin(async move {
             let drop: DropRecord = insert_into(t::drops)
                 .values(&NewDrop {
-                    user_id,
+                    user_id: user.id,
                     title: title.as_deref(),
                     url: &url,
                     status: DropStatus::Unread,
@@ -119,8 +115,14 @@ pub async fn create_drop(
                 .get_result(conn)
                 .await?;
 
-            // TODO(tags): set tags
-            let tags = vec![];
+            let selectors = tags;
+            let mut tags = Vec::new();
+            for sel in selectors.unwrap_or_default() {
+                let tag = find_or_create_tag(conn, &user, sel).await?;
+                tags.push(tag);
+            }
+
+            attach_tags(conn, &drop, &tags).await?;
 
             Ok(Drop { drop, tags })
         })
@@ -137,9 +139,10 @@ pub struct DropFields {
 
 pub async fn update_drop(
     db: &mut AsyncPgConnection,
+    user: User,
     drop: Drop,
     fields: DropFields,
-    // TODO(tags): set tags
+    tags: Option<Vec<TagSelector>>,
 ) -> anyhow::Result<Drop> {
     use diesel::update;
     use diesel_async::RunQueryDsl;
@@ -147,8 +150,23 @@ pub async fn update_drop(
     db.transaction::<Drop, anyhow::Error, _>(|conn| {
         Box::pin(async move {
             let drop: DropRecord = update(&drop.drop).set(fields).get_result(conn).await?;
-            // TODO(tags): set tags if included
-            let tags = load_drop_tags(conn, &drop).await?;
+
+            let tags = match tags {
+                None => load_drop_tags(conn, &drop).await?,
+                Some(selectors) => {
+                    let mut tags = Vec::new();
+                    for sel in selectors {
+                        let tag = find_or_create_tag(conn, &user, sel).await?;
+                        tags.push(tag);
+                    }
+
+                    attach_tags(conn, &drop, &tags).await?;
+                    detach_other_tags(conn, &drop, &tags).await?;
+
+                    tags
+                }
+            };
+
             Ok(Drop { drop, tags })
         })
     })
@@ -189,11 +207,24 @@ pub async fn list_tags(db: &mut AsyncPgConnection, user: &User) -> anyhow::Resul
     Ok(res)
 }
 
-pub async fn find_tag(
+#[derive(Debug, Clone)]
+pub enum TagSelector {
+    Find { id: Uuid },
+    Create { name: String, color: String },
+}
+
+pub async fn find_or_create_tag(
     db: &mut AsyncPgConnection,
     user: &User,
-    id: uuid::Uuid,
+    sel: TagSelector,
 ) -> anyhow::Result<Tag> {
+    match sel {
+        TagSelector::Find { id } => find_tag(db, user, id).await,
+        TagSelector::Create { name, color } => create_tag(db, user, &name, &color).await,
+    }
+}
+
+pub async fn find_tag(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> anyhow::Result<Tag> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
     use schema::tags::dsl as t;
@@ -224,6 +255,72 @@ pub async fn create_tag(
         .get_result(db)
         .await?;
     Ok(tag)
+}
+
+pub async fn attach_tag(
+    db: &mut AsyncPgConnection,
+    drop: &DropRecord,
+    tag: &Tag,
+) -> anyhow::Result<DropTag> {
+    use diesel::insert_into;
+    use diesel_async::RunQueryDsl;
+    use schema::drop_tags::dsl as dt;
+
+    let dt: DropTag = insert_into(dt::drop_tags)
+        .values(&NewDropTag {
+            drop_id: drop.id,
+            tag_id: tag.id,
+        })
+        .on_conflict((dt::drop_id, dt::tag_id))
+        .do_nothing()
+        .get_result(db)
+        .await?;
+    Ok(dt)
+}
+
+pub async fn attach_tags(
+    db: &mut AsyncPgConnection,
+    drop: &DropRecord,
+    tags: &[Tag],
+) -> anyhow::Result<Vec<DropTag>> {
+    use diesel::insert_into;
+    use diesel_async::RunQueryDsl;
+    use schema::drop_tags::dsl as dt;
+
+    let values = tags
+        .iter()
+        .map(|t| NewDropTag {
+            drop_id: drop.id,
+            tag_id: t.id,
+        })
+        .collect::<Vec<NewDropTag>>();
+
+    let dts: Vec<DropTag> = insert_into(dt::drop_tags)
+        .values(&values)
+        .on_conflict((dt::drop_id, dt::tag_id))
+        .do_nothing()
+        .get_results(db)
+        .await?;
+    Ok(dts)
+}
+
+pub async fn detach_other_tags(
+    db: &mut AsyncPgConnection,
+    drop: &DropRecord,
+    tags: &[Tag],
+) -> anyhow::Result<()> {
+    use diesel::delete;
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use schema::drop_tags::dsl as dt;
+
+    let tag_ids: Vec<Uuid> = tags.iter().map(|tag| tag.id).collect();
+
+    delete(dt::drop_tags.filter(dt::drop_id.eq(drop.id).and(dt::tag_id.ne_all(tag_ids))))
+        .execute(db)
+        .await?;
+
+    Ok(())
 }
 
 #[derive(Default, AsChangeset)]
