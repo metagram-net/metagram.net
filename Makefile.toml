@@ -17,6 +17,14 @@ command = "cargo"
 args = ["run"]
 watch = { watch = ["src", "templates", "Cargo.toml"] }
 
+[tasks.db-wait]
+description = "Wait for the dev database to become available"
+script = "until psql -c 'select 1' > /dev/null; do sleep 1; done"
+
+[tasks.db-reset]
+description = "_Delete_ the dev database and re-seed it"
+run_task = { name = ["services-down", "services", "db-wait", "migrate", "seed"] }
+
 [tasks.migrate]
 description = "Run database migrations"
 install_crate = { crate_name = "diesel_cli", binary = "diesel", test_arg = "--help" }

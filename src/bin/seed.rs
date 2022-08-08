@@ -2,7 +2,7 @@ use clap::Parser;
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use fake::{faker::lorem::en as lorem, Dummy, Fake};
 use firehose::{auth, firehose as fh};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 
 #[derive(Parser, Debug)]
 #[clap(name = "Firehose Seed")]
@@ -16,7 +16,8 @@ struct Args {
     rng_seed: Option<u64>,
 }
 
-const NUM_DROPS: u8 = 10;
+const NUM_DROPS: u8 = 50;
+const NUM_TAGS: u8 = 10;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -49,10 +50,54 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
     let user = auth::create_user(db, args.stytch_user_id).await?;
     println!("Created user: {}", user.id);
 
-    // TODO(tags): Create a bunch of fake tags.
+    let tags = seed_tags(db, &mut rng, &user).await?;
+    for tag in &tags {
+        println!("Created tag: {} {}", tag.name, tag.color);
+    }
 
+    let drops = seed_drops(db, &mut rng, &user, &tags).await?;
+    for drop in &drops {
+        let tags = drop
+            .tags
+            .iter()
+            .map(|t| t.name.clone())
+            .collect::<Vec<String>>()
+            .join(" ");
+        println!(
+            "Created drop: {:?} {} {:?} {:?}",
+            drop.drop.title, drop.drop.url, tags, drop.drop.status,
+        );
+    }
+
+    // TODO(streams): Create some streams out of some of those tags.
+
+    Ok(())
+}
+
+async fn seed_tags(
+    db: &mut AsyncPgConnection,
+    rng: &mut StdRng,
+    user: &firehose::models::User,
+) -> anyhow::Result<Vec<fh::Tag>> {
+    let mut all_tags = Vec::new();
+    for _ in 0..NUM_TAGS {
+        let name = capitalize(lorem::Word().fake_with_rng(rng));
+        let color = Color::random(rng);
+        let tag = fh::create_tag(db, user, &name, &color.css()).await?;
+        all_tags.push(tag);
+    }
+    Ok(all_tags)
+}
+
+async fn seed_drops(
+    db: &mut AsyncPgConnection,
+    rng: &mut StdRng,
+    user: &firehose::models::User,
+    all_tags: &Vec<fh::Tag>,
+) -> anyhow::Result<Vec<fh::Drop>> {
+    let mut drops = Vec::new();
     for _ in 0..NUM_DROPS {
-        let article: Article = Title(1..10).fake_with_rng(&mut rng);
+        let article: Article = Title(1..10).fake_with_rng(rng);
 
         let title = if rng.gen_bool(0.9) {
             Some(article.title)
@@ -60,7 +105,12 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
             None
         };
 
-        let tags = vec![]; // TODO(tags): create with tags
+        let tag_count = rng.gen_range(0..3);
+        let tags: Vec<fh::TagSelector> = rng
+            .sample_iter(Uniform::new(0, all_tags.len()))
+            .take(tag_count)
+            .map(|i| fh::TagSelector::Find { id: all_tags[i].id })
+            .collect();
 
         let drop = fh::create_drop(
             db,
@@ -71,12 +121,13 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
             chrono::Utc::now(),
         )
         .await?;
-        println!("Created drop: {}", drop.drop.id);
+
+        let status: fh::DropStatus = rng.gen();
+        let drop = fh::move_drop(db, drop, status, chrono::Utc::now()).await?;
+
+        drops.push(drop);
     }
-
-    // TODO(streams): Create some streams out of some of those tags.
-
-    Ok(())
+    Ok(drops)
 }
 
 struct Title(std::ops::Range<usize>);
@@ -90,12 +141,37 @@ impl Dummy<Title> for Article {
     fn dummy_with_rng<R: Rng + ?Sized>(t: &Title, rng: &mut R) -> Article {
         let words: Vec<String> = lorem::Words(t.0.clone()).fake_with_rng(rng);
         let s = words.join(" ");
-        // todo: add some randomized punctuation: end=!? inner=,:&
-        let title = s[0..1].to_uppercase() + &s[1..];
+        // TODO: add some randomized punctuation: end=!? inner=,:&
+        let title = capitalize(s);
 
         let base_url = url::Url::parse("https://example.com").expect("base_url");
         let url = base_url.join(&words.join("-")).unwrap().to_string();
 
         Article { title, url }
+    }
+}
+
+fn capitalize(s: String) -> String {
+    s[0..1].to_uppercase() + &s[1..]
+}
+
+#[derive(Debug)]
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl Color {
+    fn random<R: Rng + ?Sized>(rng: &mut R) -> Color {
+        Color {
+            r: rng.gen(),
+            g: rng.gen(),
+            b: rng.gen(),
+        }
+    }
+
+    fn css(&self) -> String {
+        format!("#{:02X}{:02X}{:02X}", self.r, self.g, self.b)
     }
 }

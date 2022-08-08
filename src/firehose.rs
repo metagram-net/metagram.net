@@ -1,9 +1,8 @@
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use uuid::Uuid;
 
-use crate::models::{
-    Drop as DropRecord, DropStatus, DropTag, NewDrop, NewDropTag, NewTag, Tag, User,
-};
+use crate::models::{Drop as DropRecord, DropTag, NewDrop, NewDropTag, NewTag, User};
+pub use crate::models::{DropStatus, Tag};
 use crate::schema;
 
 pub struct Drop {

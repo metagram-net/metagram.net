@@ -5,6 +5,10 @@ use diesel::{
     serialize::{self, IsNull, Output, ToSql},
     AsExpression, FromSqlRow, Insertable, Queryable,
 };
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 use serde::Deserialize;
 use std::io::Write;
 use uuid::Uuid;
@@ -66,6 +70,16 @@ impl FromSql<sql_types::Drop_status, Pg> for DropStatus {
             b"read" => Ok(DropStatus::Read),
             b"saved" => Ok(DropStatus::Saved),
             _ => Err("Unrecognized enum variant".into()),
+        }
+    }
+}
+
+impl Distribution<DropStatus> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DropStatus {
+        match rng.gen_range(0..=2) {
+            0 => DropStatus::Unread,
+            1 => DropStatus::Read,
+            _ => DropStatus::Saved,
         }
     }
 }
