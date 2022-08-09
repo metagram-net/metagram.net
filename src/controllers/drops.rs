@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use askama::Template;
 use axum::{
     extract::Form,
@@ -10,7 +12,7 @@ use uuid::Uuid;
 
 use crate::filters;
 use crate::firehose;
-use crate::models::{DropStatus, User};
+use crate::models::{DropStatus, Tag, User};
 use crate::{BaseUrl, Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
@@ -53,6 +55,7 @@ pub async fn index(_: Collection) -> Redirect {
 pub struct DropForm {
     title: String,
     url: String,
+    tags: HashSet<String>,
 
     errors: Option<Vec<String>>,
 }
@@ -83,20 +86,57 @@ struct NewDrop {
     user: Option<User>,
     drop: DropForm,
     bookmarklet: String,
+    tag_options: Vec<TagOption>,
+}
+
+struct TagOption {
+    id: String,
+    name: String,
+    color: String,
+}
+
+fn tag_options(tags: Vec<Tag>) -> Vec<TagOption> {
+    tags.iter()
+        .cloned()
+        .map(|t| TagOption {
+            id: t.id.to_string(),
+            name: t.name,
+            color: t.color,
+        })
+        .collect()
+}
+
+fn tag_selectors(opts: &HashSet<String>) -> Vec<firehose::TagSelector> {
+    opts.iter()
+        .map(|value| match Uuid::parse_str(value) {
+            Ok(id) => firehose::TagSelector::Find { id },
+            Err(_) => firehose::TagSelector::Create {
+                name: value.to_string(),
+                color: Tag::DEFAULT_COLOR.to_string(),
+            },
+        })
+        .collect()
 }
 
 pub async fn new(
     _: New,
     Extension(base_url): Extension<BaseUrl>,
+    PgConn(mut db): PgConn,
     context: Context,
     session: Session,
-) -> impl IntoResponse {
-    NewDrop {
+) -> Result<impl IntoResponse, Response> {
+    let tags = match firehose::list_tags(&mut db, &session.user).await {
+        Ok(tags) => tags,
+        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+    };
+
+    Ok(NewDrop {
         context,
         user: Some(session.user),
         drop: Default::default(),
         bookmarklet: bookmarklet(base_url.0),
-    }
+        tag_options: tag_options(tags),
+    })
 }
 
 pub async fn create(
@@ -106,7 +146,7 @@ pub async fn create(
     Extension(base_url): Extension<BaseUrl>,
     PgConn(mut db): PgConn,
     Form(mut form): Form<DropForm>,
-) -> Result<Redirect, impl IntoResponse> {
+) -> Result<Redirect, Response> {
     let now = chrono::Utc::now();
     let errors = match form.validate() {
         Ok(_) => None,
@@ -115,28 +155,36 @@ pub async fn create(
     form.errors = errors;
 
     let title = coerce_empty(form.title.clone());
-
-    let tags = vec![]; // TODO(tags): create with tags
+    let tags = tag_selectors(&form.tags);
 
     let drop = firehose::create_drop(
         &mut db,
         session.user.clone(),
         title,
         form.url.clone(),
-        Some(tags),
+        Some(tags.clone()),
         now,
     )
     .await;
+
     match drop {
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {
             tracing::error!({ ?err }, "could not create drop");
+
+            let all_tags = match firehose::list_tags(&mut db, &session.user).await {
+                Ok(tags) => tags,
+                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+            };
+
             Err(NewDrop {
                 context,
                 user: Some(session.user),
                 drop: form,
                 bookmarklet: bookmarklet(base_url.0),
-            })
+                tag_options: tag_options(all_tags),
+            }
+            .into_response())
         }
     }
 }
@@ -172,6 +220,7 @@ struct EditDrop {
     user: Option<User>,
     id: Uuid,
     drop: DropForm,
+    tag_options: Vec<TagOption>,
 }
 
 pub async fn edit(
@@ -181,17 +230,30 @@ pub async fn edit(
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
     let drop = firehose::find_drop(&mut db, &session.user, id).await;
+
     match drop {
-        Ok(drop) => Ok(EditDrop {
-            context,
-            user: Some(session.user),
-            id,
-            drop: DropForm {
-                title: drop.drop.title.unwrap_or_default(),
-                url: drop.drop.url,
-                errors: None,
-            },
-        }),
+        Ok(drop) => {
+            let selected_tags: HashSet<String> =
+                drop.tags.iter().map(|t| t.id.to_string()).collect();
+
+            let all_tags = match firehose::list_tags(&mut db, &session.user).await {
+                Ok(tags) => tags,
+                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+            };
+
+            Ok(EditDrop {
+                context,
+                user: Some(session.user),
+                id,
+                drop: DropForm {
+                    title: drop.drop.title.unwrap_or_default(),
+                    url: drop.drop.url,
+                    errors: None,
+                    tags: selected_tags,
+                },
+                tag_options: tag_options(all_tags),
+            })
+        }
         Err(err) => Err(context.error(Some(session), err.into())),
     }
 }
@@ -212,18 +274,25 @@ pub async fn update(
         title: coerce_empty(form.title.clone()),
         url: coerce_empty(form.url.clone()),
     };
+    let tags = tag_selectors(&form.tags);
 
-    let tags = vec![]; // TODO(tags): set tags
     let drop = firehose::update_drop(&mut db, session.user.clone(), drop, fields, Some(tags)).await;
     match drop {
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {
             tracing::error!({ ?err }, "could not update drop");
+
+            let all_tags = match firehose::list_tags(&mut db, &session.user).await {
+                Ok(tags) => tags,
+                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+            };
+
             Err(EditDrop {
                 context,
                 user: Some(session.user),
                 id,
                 drop: form,
+                tag_options: tag_options(all_tags),
             }
             .into_response())
         }
