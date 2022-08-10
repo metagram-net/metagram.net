@@ -1,15 +1,19 @@
 [tasks.dev]
 description = "Start dev services and run the app, watching for changes"
-run_task = { name = ["services", "tailwind", "run"], parallel = true }
+run_task = { name = ["services", "tailwind", "esbuild", "run"], parallel = true }
 
 [tasks.tailwind]
 command = "npx"
 args = [
     "tailwindcss",
     "--input", "./css/index.css",
-    "--output", "./dist/index.css",
+    "--output", "./dist/css/index.css",
     "--watch",
 ]
+
+[tasks.esbuild]
+command = "node"
+args = ["build.mjs", "watch"]
 
 [tasks.run]
 description = "Run the server"

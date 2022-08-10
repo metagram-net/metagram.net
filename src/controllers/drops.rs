@@ -108,11 +108,19 @@ fn tag_options(tags: Vec<Tag>) -> Vec<TagOption> {
 
 fn tag_selectors(opts: &HashSet<String>) -> Vec<firehose::TagSelector> {
     opts.iter()
-        .map(|value| match Uuid::parse_str(value) {
-            Ok(id) => firehose::TagSelector::Find { id },
-            Err(_) => firehose::TagSelector::Create {
-                name: value.to_string(),
+        // Keep this prefix synced with the select2 options.
+        .filter_map(|value| match value.strip_prefix('_') {
+            Some(name) => Some(firehose::TagSelector::Create {
+                name: name.to_string(),
                 color: Tag::DEFAULT_COLOR.to_string(),
+            }),
+            None => match Uuid::parse_str(value) {
+                Ok(id) => Some(firehose::TagSelector::Find { id }),
+                Err(_) => {
+                    // Well this is weird. There's probably a bug somewhere!
+                    tracing::error!( { ?value }, "Could not interpret tag selector" );
+                    None
+                }
             },
         })
         .collect()
