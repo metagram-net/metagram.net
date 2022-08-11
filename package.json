@@ -1,5 +1,5 @@
 {
-  "name": "firehose",
+  "name": "metagram-net",
   "dependencies": {
     "jquery": "^3.6.0",
     "select2": "^4.0.13"

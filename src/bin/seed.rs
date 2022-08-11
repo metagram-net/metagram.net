@@ -1,7 +1,7 @@
 use clap::Parser;
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use fake::{faker::lorem::en as lorem, Dummy, Fake};
-use firehose::{auth, firehose as fh};
+use metagram::{auth, firehose as fh};
 use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 
 #[derive(Parser, Debug)]
@@ -77,7 +77,7 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
 async fn seed_tags(
     db: &mut AsyncPgConnection,
     rng: &mut StdRng,
-    user: &firehose::models::User,
+    user: &metagram::models::User,
 ) -> anyhow::Result<Vec<fh::Tag>> {
     let mut all_tags = Vec::new();
     for _ in 0..NUM_TAGS {
@@ -92,7 +92,7 @@ async fn seed_tags(
 async fn seed_drops(
     db: &mut AsyncPgConnection,
     rng: &mut StdRng,
-    user: &firehose::models::User,
+    user: &metagram::models::User,
     all_tags: &Vec<fh::Tag>,
 ) -> anyhow::Result<Vec<fh::Drop>> {
     let mut drops = Vec::new();

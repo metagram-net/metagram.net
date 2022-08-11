@@ -628,47 +628,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "firehose"
-version = "0.1.0"
-dependencies = [
- "addr",
- "anyhow",
- "askama",
- "askama_axum",
- "async-trait",
- "axum",
- "axum-extra",
- "axum-macros",
- "axum_csrf",
- "base64",
- "chrono",
- "clap",
- "cookie",
- "derivative",
- "diesel",
- "diesel-async",
- "envy",
- "fake",
- "http",
- "hyper",
- "lazy_static",
- "mockall",
- "r2d2",
- "rand",
- "regex",
- "serde",
- "stytch",
- "thiserror",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "float-cmp"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1149,6 +1108,47 @@ name = "memchr"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
+
+[[package]]
+name = "metagram"
+version = "0.1.0"
+dependencies = [
+ "addr",
+ "anyhow",
+ "askama",
+ "askama_axum",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "axum-macros",
+ "axum_csrf",
+ "base64",
+ "chrono",
+ "clap",
+ "cookie",
+ "derivative",
+ "diesel",
+ "diesel-async",
+ "envy",
+ "fake",
+ "http",
+ "hyper",
+ "lazy_static",
+ "mockall",
+ "r2d2",
+ "rand",
+ "regex",
+ "serde",
+ "stytch",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
 
 [[package]]
 name = "mime"

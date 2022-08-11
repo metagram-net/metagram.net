@@ -1,8 +1,8 @@
 [package]
-name = "firehose"
+name = "metagram"
 version = "0.1.0"
 edition = "2021"
-default-run = "firehose"
+default-run = "server"
 
 [dependencies]
 addr = "0.15.4"
