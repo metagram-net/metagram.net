@@ -34,25 +34,28 @@
             <span>
               <a
                 href="{{ crate::controllers::firehose::Root.to_string() }}"
-                class="no-underline text-xl mx-4 px-3 py-2 w-auto"
+                class="no-underline text-xl mx-2 md:px-3 py-2 w-auto"
               >
                 Firehose
               </a>
             </span>
+
             <button
               type="button"
               id="nav-toggle"
-              class="js-show md:hidden"
+              class="js-show md:hidden mx-2"
               aria-expanded="false"
             >
               Menu
             </button>
           </div>
 
+          <div class="my-2 hidden md:block md:border-b border-gray-300 dark:border-gray-700"></div>
+
           {# TODO: highlight the current page #}
           {% macro link(text, path) %}
           <a
-            class="no-underline mx-4 px-3 py-2 block w-auto whitespace-nowrap rounded-full"
+            class="no-underline mx-2 px-3 py-2 block w-auto whitespace-nowrap"
           >
             {{ text }}
           </a>
@@ -71,7 +74,7 @@
             <li>{% call link("Metagram", crate::controllers::home::Root.to_string()) %}</li>
 
             <li>
-              <div class="mx-4 px-3 py-2 w-auto">
+              <div class="mx-2 px-3 py-2 w-auto">
                 {% match user %}
                 {% when Some(user) %}
                 <form method="POST" action="{{ crate::controllers::auth::Logout.to_string() }}">

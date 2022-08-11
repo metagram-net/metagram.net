@@ -16,7 +16,7 @@ if (process.argv[2] === "watch") {
 
 esbuild
   .build({
-    entryPoints: ["js/app.tsx"],
+    entryPoints: ["js/app.ts"],
     bundle: true,
     sourcemap: true,
     target: "es6",
