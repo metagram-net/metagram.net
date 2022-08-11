@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "layouts/firehose.html" %}
 {% import "macros.html" as macros %}
 
 {% block main %}
@@ -11,8 +11,6 @@
   {% call macros::form_errors("Drop", drop.errors) %}
 
   {% include "_fields.html" %}
-
-  {# TODO(tags): multi-select tags #}
 
   <div>
     <button type="submit" class="btn btn-gray">Save Drop</button>

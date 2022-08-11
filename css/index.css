@@ -83,7 +83,7 @@ a {
   }
 
   .notice {
-    @apply p-1 border border-twgray-500 bg-twgray-200 dark:border-twgray-800 dark:bg-twgray-900;
+    @apply p-1 border border-gray-500 bg-gray-200 dark:border-gray-800 dark:bg-gray-900;
   }
 
   .alert {

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    {% match context.request_id %}
+    {% when Some(request_id) %}
+    <meta name="x-request-id" content="{{request_id}}" />
+    {% when None %}
+    <meta name="x-request-id" content="(missing)" />
+    {% endmatch %}
+
+    <title>{% block title %}Firehose{% endblock %}</title>
+
+    <link rel="stylesheet" href="/dist/js/app.css" />
+    <link rel="stylesheet" href="/dist/css/index.css" />
+
+    <script type="text/javascript" src="/dist/js/app.js" defer></script>
+
+    {# TODO(pwa): manifest #}
+
+    {% block head %}{% endblock %}
+  </head>
+
+  <body class="dark:text-white dark:bg-gray-900">
+    <div class="flex flex-col md:flex-row min-h-screen">
+      <div>
+        <nav
+          role="navigation"
+          class="flex flex-col bg-gray-50 dark:bg-gray-800 p-1 h-full"
+        >
+          <a href="#main" class="sr-only focus:not-sr-only">Skip to main content</a>
+
+          <div class="flex justify-between">
+            <span>
+              <a
+                href="{{ crate::controllers::firehose::Root.to_string() }}"
+                class="no-underline text-xl mx-4 px-3 py-2 w-auto"
+              >
+                Firehose
+              </a>
+            </span>
+            <button
+              type="button"
+              id="nav-toggle"
+              class="js-show md:hidden"
+              aria-expanded="false"
+            >
+              Menu
+            </button>
+          </div>
+
+          {# TODO: highlight the current page #}
+          {% macro link(text, path) %}
+          <a
+            class="no-underline mx-4 px-3 py-2 block w-auto whitespace-nowrap rounded-full"
+          >
+            {{ text }}
+          </a>
+          {% endmacro %}
+
+          <ul id="nav-menu" class="js-hidden md:flex flex-col items-stretch space-y-2">
+            <li>{% call link("New", crate::controllers::drops::New.to_string()) %}</li>
+            {# TODO(streams): nav link #}
+            <li>{% call link("Tags", crate::controllers::tags::Collection.to_string()) %}</li>
+            {# TODO(subscriptions): nav link #}
+
+            <div class="w-full border border-gray-300 dark:border-gray-700"></div>
+
+            <li>{% call link("About Firehose", crate::controllers::firehose::About.to_string()) %}</li>
+            {# TODO: settings #}
+            <li>{% call link("Metagram", crate::controllers::home::Root.to_string()) %}</li>
+
+            <li>
+              <div class="mx-4 px-3 py-2 w-auto">
+                {% match user %}
+                {% when Some(user) %}
+                <form method="POST" action="{{ crate::controllers::auth::Logout.to_string() }}">
+                  <input
+                    type="hidden"
+                    name="authenticity_token"
+                    value="{{ context.csrf_token.authenticity_token() }}"
+                  />
+                  <button type="submit">Log out</button>
+                </form>
+                {% when None %}
+                <a href="{{ crate::controllers::auth::Login.to_string() }}">Log in</a>
+                {% endmatch %}
+              </div>
+            </li>
+          </ul>
+        </nav>
+      </div>
+
+      <main id="main" class="my-1 mx-1 md:mx-2 flex-grow">
+        {# TODO(flash): notice, alert #}
+        {% block main %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>
