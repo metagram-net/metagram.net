@@ -5,7 +5,7 @@
 {% if drops.is_empty() %}
 <p>You've reached the end of the stream!</p>
 {% else %}
-<ul class="border-b border-gray-50 dark:border-gray-700 last:border-b-0">
+<ul>
   {% for drop in drops %}
   {% include "drops/_card.html" %}
   {% endfor %}
