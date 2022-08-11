@@ -1,7 +1,17 @@
 {% extends "layouts/firehose.html" %}
 
 {% block main %}
-{% for tag in tags %}
-  {% include "_badge.html" %}
-{% endfor %}
+<ul class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 my-4">
+  {% for tag in tags %}
+  <a
+    href="{{ crate::controllers::tags::Member::path(tag.id) }}"
+    class="border-2 rounded-lg p-3 text-center no-underline hover:text-mg"
+    style="border-color: {{ tag.color }}; --mg-color: {{ tag.color }}"
+  >
+  {{ tag.name }}
+  </a>
+  {% endfor %}
+</ul>
 {% endblock %}
+
+<p><a href="{{ crate::controllers::tags::New.to_string() }}">New tag</a>

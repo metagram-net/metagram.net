@@ -60,6 +60,8 @@ pub async fn index(
 ) -> Result<impl IntoResponse, Response> {
     let tags = firehose::list_tags(&mut db, &session.user).await;
 
+    // TODO: sort tags by name
+
     match tags {
         Ok(tags) => Ok(Index {
             context,
