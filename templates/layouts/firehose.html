@@ -53,9 +53,10 @@
           <div class="my-2 hidden md:block md:border-b border-gray-300 dark:border-gray-700"></div>
 
           {# TODO: highlight the current page #}
-          {% macro link(text, path) %}
+          {% macro link(text, href) %}
           <a
             class="no-underline mx-2 px-3 py-2 block w-auto whitespace-nowrap"
+            href="{{ href }}"
           >
             {{ text }}
           </a>
