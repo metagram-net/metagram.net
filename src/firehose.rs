@@ -75,6 +75,7 @@ pub async fn find_drop(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> any
         let user_id = user.id;
 
         Box::pin(async move {
+            // TODO: Why can't I use DropRecord::belonging_to(&user) here?
             let drop: DropRecord = d::drops
                 .filter(d::user_id.eq(user_id).and(d::id.eq(id)))
                 .get_result(conn)
@@ -247,12 +248,8 @@ pub async fn find_or_create_tag(
 pub async fn find_tag(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> anyhow::Result<Tag> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
-    use schema::tags::dsl as t;
 
-    let res: Tag = t::tags
-        .filter(t::user_id.eq(user.id).and(t::id.eq(id)))
-        .get_result(db)
-        .await?;
+    let res: Tag = Tag::belonging_to(&user).find(id).get_result(db).await?;
     Ok(res)
 }
 
