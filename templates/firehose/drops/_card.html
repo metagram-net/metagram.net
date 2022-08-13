@@ -22,5 +22,22 @@
     </span>
   </div>
 
-  {# TODO(writes): Render the actions here #}
+  <div class="mt-2 md:pl-2 whitespace-nowrap">
+    <div class="p-2 flex justify-between md:block">
+      {% match drop.status %}
+      {% when DropStatus::Unread %}
+        {% call _drop::action(drop.id, "read",   "Done") %}
+        {% call _drop::action(drop.id, "saved",  "Bookmark") %}
+        {% call _drop::action(drop.id, "unread", "Snooze") %}
+      {% when DropStatus::Read %}
+        {% call _drop::action(drop.id, "unread", "Requeue") %}
+        {% call _drop::action(drop.id, "saved",  "Bookmark") %}
+      {% when DropStatus::Saved %}
+        {% call _drop::action(drop.id, "unread", "Requeue") %}
+        {% call _drop::action(drop.id, "read",   "Unsave") %}
+      {% endmatch %}
+
+      <a href="{{ crate::controllers::drops::Edit::path(drop.id) }}">Edit</a>
+    </div>
+  </div>
 </div>

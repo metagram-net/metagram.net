@@ -1,0 +1,13 @@
+{% macro action(drop_id, status, text) %}
+  <form
+    method="POST"
+    action="{{ crate::controllers::drops::Move::path(drop.id) }}"
+    class="inline-block",
+  >
+    <div>
+      <input type="hidden" name="drop_id" value="{{ drop.id }}" />
+      <input type="hidden" name="drop_status" value="{{ status }}" />
+      <button type="submit" class="btn btn-gray">{{ text }}</button>
+    </div>
+  </form>
+{% endmacro %}

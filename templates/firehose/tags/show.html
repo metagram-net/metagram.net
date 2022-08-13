@@ -1,6 +1,8 @@
 {% extends "layouts/firehose.html" %}
 
-{% macro drop_list(status, Status, drops) %}
+{% import "macros/drop.html" as _drop %}
+
+{% macro list(status, Status, drops) %}
   <h2 id="{{ status }}">{{ Status }}</h2>
   {% if drops.is_empty() %}
     <p>There are no drops here.</p>
@@ -23,8 +25,8 @@
   <a href="#read">Read</a>
 </p>
 
-{% call drop_list("unread", "Unread", unread_drops) %}
-{% call drop_list("read", "Read", read_drops) %}
-{% call drop_list("saved", "Saved", saved_drops) %}
+{% call list("unread", "Unread", unread_drops) %}
+{% call list("read", "Read", read_drops) %}
+{% call list("saved", "Saved", saved_drops) %}
 
 {% endblock %}

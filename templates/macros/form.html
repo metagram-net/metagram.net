@@ -1,4 +1,4 @@
-{% macro form_errors(resource, errors) %}
+{% macro errors(resource, errors) %}
   {% match errors %}
   {% when Some(errors) %}
   <div class="alert">

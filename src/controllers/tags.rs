@@ -9,7 +9,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::filters;
-use crate::firehose;
+use crate::firehose::{self, DropStatus};
 use crate::models::{Tag, User};
 use crate::{Context, PgConn, Session};
 

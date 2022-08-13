@@ -1,5 +1,5 @@
 {% extends "layouts/firehose.html" %}
-{% import "macros.html" as macros %}
+{% import "macros/form.html" as form %}
 
 {% block main %}
 <h1>New Drop</h1>
@@ -8,7 +8,7 @@
   method="POST"
   action="{{ crate::controllers::drops::Collection.to_string() }}"
 >
-  {% call macros::form_errors("Drop", drop.errors) %}
+  {% call form::errors("Drop", drop.errors) %}
 
   {% include "_fields.html" %}
 

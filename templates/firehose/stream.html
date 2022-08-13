@@ -1,5 +1,7 @@
 {% extends "layouts/firehose.html" %}
 
+{% import "macros/drop.html" as _drop %}
+
 {% block main %}
 {# TODO(streams): show stream name and query #}
 {% if drops.is_empty() %}

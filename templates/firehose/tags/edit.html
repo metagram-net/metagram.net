@@ -1,5 +1,5 @@
 {% extends "layouts/firehose.html" %}
-{% import "macros.html" as macros %}
+{% import "macros/form.html" as form %}
 
 {% block main %}
 <h1>Edit Tag</h1>
@@ -8,7 +8,7 @@
   method="POST"
   action="{{ crate::controllers::tags::Member::path(id) }}"
 >
-  {% call macros::form_errors("Tag", tag.errors) %}
+  {% call form::errors("Tag", tag.errors) %}
 
   {% include "_fields.html" %}
 

@@ -29,6 +29,8 @@ pub struct Member {
     id: Uuid,
 }
 
+// TODO: Is there a good way to derive path()?
+
 impl Member {
     pub fn path(id: &Uuid) -> String {
         Self { id: *id }.to_string()
@@ -41,10 +43,22 @@ pub struct Edit {
     id: Uuid,
 }
 
+impl Edit {
+    pub fn path(id: &Uuid) -> String {
+        Self { id: *id }.to_string()
+    }
+}
+
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/drops/:id/move")]
 pub struct Move {
     id: Uuid,
+}
+
+impl Move {
+    pub fn path(id: &Uuid) -> String {
+        Self { id: *id }.to_string()
+    }
 }
 
 pub async fn index(_: Collection) -> Redirect {
