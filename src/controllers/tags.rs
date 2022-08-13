@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::routing::TypedPath;
+use diesel_async::AsyncPgConnection;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -157,6 +158,10 @@ struct Show {
     context: Context,
     user: Option<User>,
     tag: Tag,
+
+    unread_drops: Vec<firehose::Drop>,
+    read_drops: Vec<firehose::Drop>,
+    saved_drops: Vec<firehose::Drop>,
 }
 
 pub async fn show(
@@ -165,14 +170,72 @@ pub async fn show(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    match firehose::find_tag(&mut db, &session.user, id).await {
-        Ok(tag) => Ok(Show {
-            context,
-            user: Some(session.user),
-            tag,
-        }),
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+    let tag = match firehose::find_tag(&mut db, &session.user, id).await {
+        Ok(tag) => tag,
+        Err(err) => return Err(context.error(Some(session), err.into())),
+    };
+
+    let drops = match load_tag_drops(&mut db, &session.user, tag.clone()).await {
+        Ok(drops) => drops,
+        Err(err) => return Err(context.error(Some(session), err.into())),
+    };
+
+    Ok(Show {
+        context,
+        user: Some(session.user),
+        tag,
+        unread_drops: drops.unread_drops,
+        read_drops: drops.read_drops,
+        saved_drops: drops.saved_drops,
+    })
+}
+
+struct TagDrops {
+    unread_drops: Vec<firehose::Drop>,
+    read_drops: Vec<firehose::Drop>,
+    saved_drops: Vec<firehose::Drop>,
+}
+
+async fn load_tag_drops(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    tag: Tag,
+) -> anyhow::Result<TagDrops> {
+    let unread_drops = firehose::list_drops_filtered(
+        db,
+        user.clone(),
+        firehose::DropFilters {
+            tag: Some(tag.clone()),
+            status: Some(firehose::DropStatus::Unread),
+        },
+    )
+    .await?;
+
+    let read_drops = firehose::list_drops_filtered(
+        db,
+        user.clone(),
+        firehose::DropFilters {
+            tag: Some(tag.clone()),
+            status: Some(firehose::DropStatus::Read),
+        },
+    )
+    .await?;
+
+    let saved_drops = firehose::list_drops_filtered(
+        db,
+        user.clone(),
+        firehose::DropFilters {
+            tag: Some(tag.clone()),
+            status: Some(firehose::DropStatus::Saved),
+        },
+    )
+    .await?;
+
+    Ok(TagDrops {
+        unread_drops,
+        read_drops,
+        saved_drops,
+    })
 }
 
 #[derive(Template)]

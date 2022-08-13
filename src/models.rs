@@ -18,7 +18,8 @@ use crate::{schema, sql_types};
 // Remember: using `#[derive(Queryable)]` assumes that the order of fields on the `Model` struct
 // matches the order of columns in the `models` table (stored in `schema.rs`).
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable)]
+#[diesel(table_name=schema::users)]
 pub struct User {
     pub id: Uuid,
     pub stytch_user_id: String,

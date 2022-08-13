@@ -1,7 +1,30 @@
 {% extends "layouts/firehose.html" %}
 
+{% macro drop_list(status, Status, drops) %}
+  <h2 id="{{ status }}">{{ Status }}</h2>
+  {% if drops.is_empty() %}
+    <p>There are no drops here.</p>
+  {% else %}
+    <ul>
+      {% for drop in drops %}
+        {% include "firehose/drops/_card.html" %}
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endmacro %}
+
 {% block main %}
 {% include "_badge.html" %}
 
-{# TODO(tags): drops for tag (start here) #}
+<p>
+  Jump to section:
+  <a href="#unread">Unread</a>
+  <a href="#saved">Saved</a>
+  <a href="#read">Read</a>
+</p>
+
+{% call drop_list("unread", "Unread", unread_drops) %}
+{% call drop_list("read", "Read", read_drops) %}
+{% call drop_list("saved", "Saved", saved_drops) %}
+
 {% endblock %}

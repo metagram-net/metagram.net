@@ -33,12 +33,26 @@ pub async fn show(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let drops: anyhow::Result<Vec<firehose::Drop>> = match id.as_str() {
-        "unread" => firehose::list_drops(&mut db, session.user.clone(), DropStatus::Unread).await,
-        "read" => firehose::list_drops(&mut db, session.user.clone(), DropStatus::Read).await,
-        "saved" => firehose::list_drops(&mut db, session.user.clone(), DropStatus::Saved).await,
+    let filters = match id.as_str() {
+        "unread" => firehose::DropFilters {
+            status: Some(DropStatus::Unread),
+            ..Default::default()
+        },
+
+        "read" => firehose::DropFilters {
+            status: Some(DropStatus::Read),
+            ..Default::default()
+        },
+
+        "saved" => firehose::DropFilters {
+            status: Some(DropStatus::Saved),
+            ..Default::default()
+        },
+
         _id => todo!("feat: custom streams"),
     };
+
+    let drops = firehose::list_drops_filtered(&mut db, session.user.clone(), filters).await;
 
     match drops {
         Ok(drops) => Ok(ShowPage {
