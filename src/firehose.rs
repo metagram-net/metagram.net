@@ -10,52 +10,13 @@ pub struct Drop {
     pub tags: Vec<Tag>,
 }
 
-pub async fn list_drops(
-    db: &mut AsyncPgConnection,
-    user: User,
-    status: DropStatus,
-) -> anyhow::Result<Vec<Drop>> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::drops::dsl as d;
-    use schema::tags::dsl as t;
-
-    db.transaction::<Vec<Drop>, anyhow::Error, _>(|conn| {
-        Box::pin(async move {
-            let drops: Vec<DropRecord> = d::drops
-                .filter(d::user_id.eq(user.id).and(d::status.eq(status)))
-                .order_by(d::moved_at.asc())
-                .load(conn)
-                .await?;
-
-            let drop_tags: Vec<Vec<(DropTag, Tag)>> = DropTag::belonging_to(&drops)
-                .inner_join(t::tags)
-                .load(conn)
-                .await?
-                .grouped_by(&drops);
-
-            let data = drops
-                .into_iter()
-                .zip(drop_tags)
-                .map(|(drop, dts)| {
-                    let tags = dts.iter().cloned().map(|(_dt, tag)| tag).collect();
-                    Drop { drop, tags }
-                })
-                .collect::<Vec<_>>();
-
-            Ok(data)
-        })
-    })
-    .await
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct DropFilters {
     pub status: Option<DropStatus>,
     pub tag: Option<Tag>,
 }
 
-pub async fn list_drops_filtered(
+pub async fn list_drops(
     db: &mut AsyncPgConnection,
     user: User,
     filters: DropFilters,
@@ -82,51 +43,6 @@ pub async fn list_drops_filtered(
             }
 
             let drops: Vec<DropRecord> = query.load(conn).await?;
-
-            let drop_tags: Vec<Vec<(DropTag, Tag)>> = DropTag::belonging_to(&drops)
-                .inner_join(t::tags)
-                .load(conn)
-                .await?
-                .grouped_by(&drops);
-
-            let data = drops
-                .into_iter()
-                .zip(drop_tags)
-                .map(|(drop, dts)| {
-                    let tags = dts.iter().cloned().map(|(_dt, tag)| tag).collect();
-                    Drop { drop, tags }
-                })
-                .collect::<Vec<_>>();
-
-            Ok(data)
-        })
-    })
-    .await
-}
-
-pub async fn list_tag_drops(
-    db: &mut AsyncPgConnection,
-    user: User,
-    tag: &Tag,
-    status: DropStatus,
-) -> anyhow::Result<Vec<Drop>> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::drop_tags::dsl as dt;
-    use schema::drops::dsl as d;
-    use schema::tags::dsl as t;
-
-    db.transaction::<Vec<Drop>, anyhow::Error, _>(|conn| {
-        let tag_id = tag.id;
-        Box::pin(async move {
-            let drops: Vec<DropRecord> = d::drops
-                .filter(d::user_id.eq(user.id).and(d::status.eq(status)))
-                .inner_join(dt::drop_tags.inner_join(t::tags))
-                .filter(t::id.eq(tag_id))
-                .select(d::drops::all_columns())
-                .order_by(d::moved_at.asc())
-                .load(conn)
-                .await?;
 
             let drop_tags: Vec<Vec<(DropTag, Tag)>> = DropTag::belonging_to(&drops)
                 .inner_join(t::tags)

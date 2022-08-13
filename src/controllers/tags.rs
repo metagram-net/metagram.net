@@ -201,7 +201,7 @@ async fn load_tag_drops(
     user: &User,
     tag: Tag,
 ) -> anyhow::Result<TagDrops> {
-    let unread_drops = firehose::list_drops_filtered(
+    let unread_drops = firehose::list_drops(
         db,
         user.clone(),
         firehose::DropFilters {
@@ -211,7 +211,7 @@ async fn load_tag_drops(
     )
     .await?;
 
-    let read_drops = firehose::list_drops_filtered(
+    let read_drops = firehose::list_drops(
         db,
         user.clone(),
         firehose::DropFilters {
@@ -221,7 +221,7 @@ async fn load_tag_drops(
     )
     .await?;
 
-    let saved_drops = firehose::list_drops_filtered(
+    let saved_drops = firehose::list_drops(
         db,
         user.clone(),
         firehose::DropFilters {

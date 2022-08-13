@@ -52,7 +52,7 @@ pub async fn show(
         _id => todo!("feat: custom streams"),
     };
 
-    let drops = firehose::list_drops_filtered(&mut db, session.user.clone(), filters).await;
+    let drops = firehose::list_drops(&mut db, session.user.clone(), filters).await;
 
     match drops {
         Ok(drops) => Ok(ShowPage {
