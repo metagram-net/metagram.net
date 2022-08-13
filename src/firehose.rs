@@ -54,7 +54,8 @@ pub async fn list_drops(
                 .into_iter()
                 .zip(drop_tags)
                 .map(|(drop, dts)| {
-                    let tags = dts.iter().cloned().map(|(_dt, tag)| tag).collect();
+                    let mut tags: Vec<Tag> = dts.iter().cloned().map(|(_dt, tag)| tag).collect();
+                    tags.sort_by_key(|t| t.name.clone());
                     Drop { drop, tags }
                 })
                 .collect::<Vec<_>>();
@@ -219,7 +220,10 @@ pub async fn list_tags(db: &mut AsyncPgConnection, user: &User) -> anyhow::Resul
     use diesel_async::RunQueryDsl;
     use schema::tags::dsl as t;
 
-    let res: Vec<Tag> = t::tags.filter(t::user_id.eq(user.id)).load(db).await?;
+    let res: Vec<Tag> = Tag::belonging_to(&user)
+        .order_by(t::name.asc())
+        .load(db)
+        .await?;
     Ok(res)
 }
 
