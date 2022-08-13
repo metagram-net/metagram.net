@@ -1,7 +1,10 @@
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use uuid::Uuid;
 
-use crate::models::{Drop as DropRecord, DropTag, NewDrop, NewDropTag, NewTag, User};
+use crate::models::{
+    Drop as DropRecord, DropTag, NewDrop, NewDropTag, NewStream, NewTag, Stream as StreamRecord,
+    User,
+};
 pub use crate::models::{DropStatus, Tag};
 use crate::schema;
 
@@ -13,7 +16,7 @@ pub struct Drop {
 #[derive(Debug, Clone, Default)]
 pub struct DropFilters {
     pub status: Option<DropStatus>,
-    pub tag: Option<Tag>,
+    pub tags: Option<Vec<Tag>>,
 }
 
 pub async fn list_drops(
@@ -30,19 +33,23 @@ pub async fn list_drops(
     db.transaction::<Vec<Drop>, anyhow::Error, _>(|conn| {
         Box::pin(async move {
             let mut query = DropRecord::belonging_to(&user)
-                .inner_join(dt::drop_tags.inner_join(t::tags))
+                .left_join(dt::drop_tags.inner_join(t::tags))
                 .select(d::drops::all_columns())
+                .distinct()
                 .order_by(d::moved_at.asc())
                 .into_boxed();
 
             if let Some(status) = filters.status {
                 query = query.filter(d::status.eq(status));
             }
-            if let Some(tag) = filters.tag {
-                query = query.filter(t::id.eq(tag.id));
+            if let Some(tags) = filters.tags {
+                let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
+                query = query.filter(t::id.eq_any(tag_ids));
             }
 
             let drops: Vec<DropRecord> = query.load(conn).await?;
+
+            // TODO: The query above probably sees enough data to skip the rest of this.
 
             let drop_tags: Vec<Vec<(DropTag, Tag)>> = DropTag::belonging_to(&drops)
                 .inner_join(t::tags)
@@ -75,7 +82,6 @@ pub async fn find_drop(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> any
         let user_id = user.id;
 
         Box::pin(async move {
-            // TODO: Why can't I use DropRecord::belonging_to(&user) here?
             let drop: DropRecord = d::drops
                 .filter(d::user_id.eq(user_id).and(d::id.eq(id)))
                 .get_result(conn)
@@ -249,8 +255,7 @@ pub async fn find_tag(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> anyh
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
 
-    let res: Tag = Tag::belonging_to(&user).find(id).get_result(db).await?;
-    Ok(res)
+    Ok(Tag::belonging_to(&user).find(id).get_result(db).await?)
 }
 
 pub async fn create_tag(
@@ -357,4 +362,145 @@ pub async fn update_tag(
 
     let tag: Tag = update(tag).set(fields).get_result(db).await?;
     Ok(tag)
+}
+
+pub struct CustomStream {
+    pub stream: StreamRecord,
+    pub tags: Vec<Tag>,
+}
+
+impl CustomStream {
+    pub fn tag_names(&self) -> Vec<String> {
+        self.tags.iter().cloned().map(|t| t.name).collect()
+    }
+
+    pub fn filters(&self) -> DropFilters {
+        DropFilters {
+            tags: Some(self.tags.to_vec()),
+            ..Default::default()
+        }
+    }
+}
+
+pub struct StatusStream {
+    pub status: DropStatus,
+}
+
+impl StatusStream {
+    pub fn filters(&self) -> DropFilters {
+        DropFilters {
+            status: Some(self.status.clone()),
+            ..Default::default()
+        }
+    }
+}
+
+pub enum Stream {
+    Custom(CustomStream),
+    Status(StatusStream),
+}
+
+impl Stream {
+    pub fn filters(&self) -> DropFilters {
+        match self {
+            Self::Custom(stream) => stream.filters(),
+            Self::Status(stream) => stream.filters(),
+        }
+    }
+}
+
+pub async fn list_streams(db: &mut AsyncPgConnection, user: &User) -> anyhow::Result<Vec<Stream>> {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use schema::streams::dsl as s;
+
+    let mut res = vec![
+        Stream::Status(StatusStream {
+            status: DropStatus::Unread,
+        }),
+        Stream::Status(StatusStream {
+            status: DropStatus::Read,
+        }),
+        Stream::Status(StatusStream {
+            status: DropStatus::Saved,
+        }),
+    ];
+
+    let streams: Vec<StreamRecord> = StreamRecord::belonging_to(&user)
+        .order_by(s::name.asc())
+        .load(db)
+        .await?;
+
+    let mut custom_streams: Vec<Stream> = streams
+        .iter()
+        .cloned()
+        .map(|stream| {
+            Stream::Custom(CustomStream {
+                stream,
+                tags: vec![], // TODO: Load stream tags
+            })
+        })
+        .collect();
+
+    res.append(&mut custom_streams);
+    Ok(res)
+}
+
+pub async fn find_stream(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    id: Uuid,
+) -> anyhow::Result<CustomStream> {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+
+    let stream = StreamRecord::belonging_to(&user)
+        .find(id)
+        .get_result(db)
+        .await?;
+
+    Ok(CustomStream {
+        stream,
+        tags: vec![], // TODO: Load stream tags
+    })
+}
+
+pub async fn create_stream(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    name: &str,
+    tags: &[Tag],
+) -> anyhow::Result<CustomStream> {
+    use diesel::insert_into;
+    use diesel_async::RunQueryDsl;
+    use schema::streams::dsl as s;
+
+    let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
+    let user = user.clone();
+    let name = name.to_string();
+
+    db.transaction::<CustomStream, anyhow::Error, _>(|conn| {
+        Box::pin(async move {
+            let stream: StreamRecord = insert_into(s::streams)
+                .values(&NewStream {
+                    user_id: user.id,
+                    name: &name,
+                    tag_ids,
+                })
+                .get_result(conn)
+                .await?;
+
+            let mut tags = Vec::new();
+            for id in &stream.tag_ids {
+                let tag = find_tag(conn, &user, *id).await?;
+                tags.push(tag);
+            }
+
+            Ok(CustomStream {
+                stream,
+                tags: tags.to_vec(),
+            })
+        })
+    })
+    .await
 }

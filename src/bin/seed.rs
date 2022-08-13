@@ -1,7 +1,7 @@
 use clap::Parser;
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use fake::{faker::lorem::en as lorem, Dummy, Fake};
-use metagram::{auth, firehose as fh};
+use metagram::{auth, firehose};
 use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 
 #[derive(Parser, Debug)]
@@ -17,6 +17,7 @@ struct Args {
 }
 
 const NUM_DROPS: u8 = 50;
+const NUM_STREAMS: u8 = 5;
 const NUM_TAGS: u8 = 10;
 
 #[tokio::main]
@@ -55,6 +56,15 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
         println!("Created tag: {} {}", tag.name, tag.color);
     }
 
+    let streams = seed_streams(db, &mut rng, &user, &tags).await?;
+    for stream in &streams {
+        println!(
+            "Created stream: {} {:?}",
+            stream.stream.name,
+            stream.tag_names()
+        );
+    }
+
     let drops = seed_drops(db, &mut rng, &user, &tags).await?;
     for drop in &drops {
         let tags = drop
@@ -69,8 +79,6 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
         );
     }
 
-    // TODO(streams): Create some streams out of some of those tags.
-
     Ok(())
 }
 
@@ -78,23 +86,47 @@ async fn seed_tags(
     db: &mut AsyncPgConnection,
     rng: &mut StdRng,
     user: &metagram::models::User,
-) -> anyhow::Result<Vec<fh::Tag>> {
-    let mut all_tags = Vec::new();
+) -> anyhow::Result<Vec<firehose::Tag>> {
+    let mut tags = Vec::new();
     for _ in 0..NUM_TAGS {
         let name = capitalize(lorem::Word().fake_with_rng(rng));
         let color = Color::random(rng);
-        let tag = fh::create_tag(db, user, &name, &color.css()).await?;
-        all_tags.push(tag);
+        let tag = firehose::create_tag(db, user, &name, &color.css()).await?;
+        tags.push(tag);
     }
-    Ok(all_tags)
+    Ok(tags)
+}
+
+async fn seed_streams(
+    db: &mut AsyncPgConnection,
+    rng: &mut StdRng,
+    user: &metagram::models::User,
+    all_tags: &Vec<firehose::Tag>,
+) -> anyhow::Result<Vec<firehose::CustomStream>> {
+    let mut streams = Vec::new();
+    for _ in 0..NUM_STREAMS {
+        let phrase: Vec<String> = lorem::Words(1..3).fake_with_rng(rng);
+        let name = capitalize(phrase.join(" "));
+
+        let tag_count = rng.gen_range(0..3);
+        let tags: Vec<firehose::Tag> = rng
+            .sample_iter(Uniform::new(0, all_tags.len()))
+            .take(tag_count)
+            .map(|i| all_tags[i].clone())
+            .collect();
+
+        let stream = firehose::create_stream(db, user, &name, &tags).await?;
+        streams.push(stream);
+    }
+    Ok(streams)
 }
 
 async fn seed_drops(
     db: &mut AsyncPgConnection,
     rng: &mut StdRng,
     user: &metagram::models::User,
-    all_tags: &Vec<fh::Tag>,
-) -> anyhow::Result<Vec<fh::Drop>> {
+    all_tags: &Vec<firehose::Tag>,
+) -> anyhow::Result<Vec<firehose::Drop>> {
     let mut drops = Vec::new();
     for _ in 0..NUM_DROPS {
         let article: Article = Title(1..10).fake_with_rng(rng);
@@ -106,13 +138,13 @@ async fn seed_drops(
         };
 
         let tag_count = rng.gen_range(0..3);
-        let tags: Vec<fh::TagSelector> = rng
+        let tags: Vec<firehose::TagSelector> = rng
             .sample_iter(Uniform::new(0, all_tags.len()))
             .take(tag_count)
-            .map(|i| fh::TagSelector::Find { id: all_tags[i].id })
+            .map(|i| firehose::TagSelector::Find { id: all_tags[i].id })
             .collect();
 
-        let drop = fh::create_drop(
+        let drop = firehose::create_drop(
             db,
             user.clone(),
             title,
@@ -122,8 +154,8 @@ async fn seed_drops(
         )
         .await?;
 
-        let status: fh::DropStatus = rng.gen();
-        let drop = fh::move_drop(db, drop, status, chrono::Utc::now()).await?;
+        let status: firehose::DropStatus = rng.gen();
+        let drop = firehose::move_drop(db, drop, status, chrono::Utc::now()).await?;
 
         drops.push(drop);
     }

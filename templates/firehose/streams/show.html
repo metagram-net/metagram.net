@@ -1,0 +1,22 @@
+{% extends "layouts/firehose.html" %}
+
+{% import "macros/drop.html" as _drop %}
+
+{% block main %}
+  {% match stream %}
+  {% when firehose::Stream::Status with (stream) %}
+  {% when firehose::Stream::Custom with (stream) %}
+    <h1>{{ stream.stream.name }}</h1>
+    {# TODO: tag badges #}
+  {% endmatch %}
+
+  {% if drops.is_empty() %}
+    <p>You've reached the end of the stream!</p>
+  {% else %}
+    <ul>
+      {% for drop in drops %}
+      {% include "firehose/drops/_card.html" %}
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}

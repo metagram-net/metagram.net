@@ -64,7 +64,7 @@
 
           <ul id="nav-menu" class="js-hidden md:flex flex-col items-stretch space-y-2">
             <li>{% call link("New", crate::controllers::drops::New.to_string()) %}</li>
-            {# TODO(streams): nav link #}
+            <li>{% call link("Streams", crate::controllers::streams::Collection.to_string()) %}</li>
             <li>{% call link("Tags", crate::controllers::tags::Collection.to_string()) %}</li>
             {# TODO(subscriptions): nav link #}
 

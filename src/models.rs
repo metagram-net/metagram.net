@@ -179,6 +179,26 @@ pub struct NewDropTag {
     pub tag_id: Uuid,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
+#[diesel(table_name=schema::streams)]
+#[diesel(belongs_to(User))]
+pub struct Stream {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub tag_ids: Vec<Uuid>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Deserialize, Insertable, Debug, Clone)]
+#[diesel(table_name = schema::streams)]
+pub struct NewStream<'a> {
+    pub user_id: Uuid,
+    pub name: &'a str,
+    pub tag_ids: Vec<Uuid>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -203,7 +203,7 @@ async fn load_tag_drops(
         db,
         user.clone(),
         firehose::DropFilters {
-            tag: Some(tag.clone()),
+            tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Unread),
         },
     )
@@ -213,7 +213,7 @@ async fn load_tag_drops(
         db,
         user.clone(),
         firehose::DropFilters {
-            tag: Some(tag.clone()),
+            tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Read),
         },
     )
@@ -223,7 +223,7 @@ async fn load_tag_drops(
         db,
         user.clone(),
         firehose::DropFilters {
-            tag: Some(tag.clone()),
+            tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Saved),
         },
     )
