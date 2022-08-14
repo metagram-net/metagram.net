@@ -177,15 +177,15 @@ pub async fn create(
     };
     form.errors = errors;
 
+    // If the title is an empty string, set it to null instead.
     let title = coerce_empty(form.title.clone());
-    let tags = tag_selectors(&form.tags);
 
     let drop = firehose::create_drop(
         &mut db,
         session.user.clone(),
         title,
         form.url.clone(),
-        Some(tags.clone()),
+        Some(tag_selectors(&form.tags)),
         now,
     )
     .await;
@@ -359,7 +359,6 @@ fn bookmarklet(base_url: url::Url) -> String {
     )
 }
 
-// TODO: util?
 fn coerce_empty(s: String) -> Option<String> {
     if s.is_empty() {
         None

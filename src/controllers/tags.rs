@@ -280,8 +280,8 @@ pub async fn update(
     };
 
     let fields = firehose::TagFields {
-        name: coerce_empty(form.name.clone()),
-        color: coerce_empty(form.color.clone()),
+        name: Some(form.name.clone()),
+        color: Some(form.color.clone()),
     };
 
     let tag = firehose::update_tag(&mut db, &tag, fields).await;
@@ -297,14 +297,5 @@ pub async fn update(
             }
             .into_response())
         }
-    }
-}
-
-// TODO: util?
-fn coerce_empty(s: String) -> Option<String> {
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
     }
 }
