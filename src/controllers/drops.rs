@@ -103,6 +103,7 @@ struct NewDrop {
     tag_options: Vec<TagOption>,
 }
 
+// TODO: dedupe with streams controller
 struct TagOption {
     id: String,
     name: String,

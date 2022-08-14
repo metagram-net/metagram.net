@@ -1,0 +1,19 @@
+{% extends "layouts/firehose.html" %}
+{% import "macros/form.html" as form %}
+
+{% block main %}
+<h1>Edit Stream</h1>
+
+<form
+  method="POST"
+  action="{{ crate::controllers::streams::Member::path_uuid(id) }}"
+>
+  {% call form::errors("Stream", stream.errors) %}
+
+  {% include "_fields.html" %}
+
+  <div>
+    <button type="submit" class="btn btn-gray">Save Stream</button>
+  </div>
+</form>
+{% endblock %}

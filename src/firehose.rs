@@ -236,6 +236,19 @@ pub async fn list_tags(db: &mut AsyncPgConnection, user: &User) -> anyhow::Resul
     Ok(res)
 }
 
+pub async fn find_tags(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    ids: &[Uuid],
+) -> anyhow::Result<Vec<Tag>> {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use schema::tags::dsl as t;
+
+    let query = Tag::belonging_to(&user).filter(t::id.eq_any(ids));
+    Ok(query.get_results(db).await?)
+}
+
 #[derive(Debug, Clone)]
 pub enum TagSelector {
     Find { id: Uuid },
@@ -512,17 +525,33 @@ pub async fn create_stream(
                 .get_result(conn)
                 .await?;
 
-            let mut tags = Vec::new();
-            for id in &stream.tag_ids {
-                let tag = find_tag(conn, &user, *id).await?;
-                tags.push(tag);
-            }
+            let tags = find_tags(conn, &user, &stream.tag_ids).await?;
 
-            Ok(CustomStream {
-                stream,
-                tags: tags.to_vec(),
-            })
+            Ok(CustomStream { stream, tags })
         })
     })
     .await
+}
+
+#[derive(Default, AsChangeset)]
+#[diesel(table_name=schema::streams)]
+pub struct StreamFields {
+    pub name: Option<String>,
+    pub tag_ids: Option<Vec<Uuid>>,
+}
+
+pub async fn update_stream(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    stream: &StreamRecord,
+    fields: StreamFields,
+) -> anyhow::Result<CustomStream> {
+    use diesel::update;
+    use diesel_async::RunQueryDsl;
+
+    let stream: StreamRecord = update(stream).set(fields).get_result(db).await?;
+
+    let tags = find_tags(db, user, &stream.tag_ids).await?;
+
+    Ok(CustomStream { stream, tags })
 }

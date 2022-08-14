@@ -1,0 +1,29 @@
+<div>
+  <label for="name">Name</label>
+  <div>
+    <input
+        type="text"
+        name="name"
+        class="w-full truncate"
+        autofocus
+        value="{{ stream.name }}"
+    />
+  </div>
+</div>
+
+<div>
+  <label for="tags">Tags</label>
+  <div>
+    <select class="w-full select-multiple" multiple>
+      {% for tag in tag_options %}
+        <option
+          value="{{tag.id}}"
+          data-color="{{tag.color}}"
+          {% if stream.tags.contains(tag.id) %}selected{% endif %}
+        >
+          "{{tag.name}}"
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+</div>

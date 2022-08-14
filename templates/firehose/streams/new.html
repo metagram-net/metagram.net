@@ -1,0 +1,19 @@
+{% extends "layouts/firehose.html" %}
+{% import "macros/form.html" as form %}
+
+{% block main %}
+<h1>New Stream</h1>
+
+<form
+  method="POST"
+  action="{{ crate::controllers::streams::Collection.to_string() }}"
+>
+  {% call form::errors("Stream", stream.errors) %}
+
+  {% include "_fields.html" %}
+
+  <div>
+    <button type="submit" class="btn btn-gray">Create Stream</button>
+  </div>
+</form>
+{% endblock %}
