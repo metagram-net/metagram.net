@@ -37,7 +37,12 @@
         {% call _drop::action(drop.id, "read",   "Unsave") %}
       {% endmatch %}
 
-      <a href="{{ crate::controllers::drops::Edit::path(drop.id) }}">Edit</a>
+      <a
+        href="{{ crate::controllers::drops::Edit::path(drop.id) }}"
+        class="btn btn-gray no-underline inline-block"
+      >
+        Edit
+      </a>
     </div>
   </div>
 </div>
