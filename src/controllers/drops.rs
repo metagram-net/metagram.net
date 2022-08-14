@@ -10,9 +10,12 @@ use axum_extra::routing::TypedPath;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::filters;
 use crate::firehose;
 use crate::models::{DropStatus, Tag, User};
+use crate::{
+    filters,
+    view_models::{tag_options, TagOption},
+};
 use crate::{BaseUrl, Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
@@ -101,24 +104,6 @@ struct NewDrop {
     drop: DropForm,
     bookmarklet: String,
     tag_options: Vec<TagOption>,
-}
-
-// TODO: dedupe with streams controller
-struct TagOption {
-    id: String,
-    name: String,
-    color: String,
-}
-
-fn tag_options(tags: Vec<Tag>) -> Vec<TagOption> {
-    tags.iter()
-        .cloned()
-        .map(|t| TagOption {
-            id: t.id.to_string(),
-            name: t.name,
-            color: t.color,
-        })
-        .collect()
 }
 
 fn tag_selectors(opts: &HashSet<String>) -> Vec<firehose::TagSelector> {

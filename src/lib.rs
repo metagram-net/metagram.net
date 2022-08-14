@@ -28,6 +28,7 @@ pub mod models;
 #[rustfmt::skip]
 pub mod schema;
 pub mod sql_types;
+pub mod view_models;
 pub use models::User;
 
 pub mod auth;

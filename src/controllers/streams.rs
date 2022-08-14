@@ -3,13 +3,13 @@ use axum::extract::Form;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::routing::TypedPath;
-use firehose::Tag;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::filters;
 use crate::firehose;
 use crate::models::{DropStatus, User};
+use crate::view_models::{tag_options, TagOption};
 use crate::{Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
@@ -66,24 +66,6 @@ pub async fn index(
         user: Some(session.user),
         streams,
     })
-}
-
-// TODO: dedupe with drops controller
-struct TagOption {
-    id: String,
-    name: String,
-    color: String,
-}
-
-fn tag_options(tags: Vec<Tag>) -> Vec<TagOption> {
-    tags.iter()
-        .cloned()
-        .map(|t| TagOption {
-            id: t.id.to_string(),
-            name: t.name,
-            color: t.color,
-        })
-        .collect()
 }
 
 #[derive(Template)]
