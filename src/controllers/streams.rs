@@ -42,6 +42,12 @@ pub struct Edit {
     id: Uuid,
 }
 
+impl Edit {
+    pub fn path(id: &Uuid) -> String {
+        Self { id: *id }.to_string()
+    }
+}
+
 #[derive(Template)]
 #[template(path = "firehose/streams/index.html")]
 struct Index {

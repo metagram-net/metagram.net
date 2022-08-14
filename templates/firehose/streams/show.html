@@ -14,7 +14,7 @@
       {% endfor %}
     </ul>
 
-    {# TODO; <a href="{{ crate::controllers::streams::Edit::path_id(drop.id) }}">Edit</a> #}
+    <a href="{{ crate::controllers::streams::Edit::path(stream.stream.id) }}">Edit</a>
   {% endmatch %}
 
   {% if drops.is_empty() %}

@@ -20,7 +20,7 @@
             {{ stream.stream.name }}
           </a>
 
-          {# TODO: (<a href="{{ crate::controllers::streams::Edit::path(stream.id.to_string()) }}">edit</a>) #}
+          (<a href="{{ crate::controllers::streams::Edit::path(stream.stream.id) }}">edit</a>)
         </li>
       {% endmatch %}
     {% endfor %}
