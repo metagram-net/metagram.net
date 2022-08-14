@@ -1,43 +1,43 @@
 use askama::Template;
-use axum::extract::Form;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::{
+    extract::Form,
+    response::{IntoResponse, Redirect, Response},
+};
 use axum_extra::routing::TypedPath;
+use http::StatusCode;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::filters;
 use crate::firehose;
-use crate::models::{DropStatus, User};
-use crate::view_models::{tag_options, TagOption};
+use crate::models::User;
+use crate::{
+    filters,
+    view_models::{tag_options, TagOption},
+};
 use crate::{Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
-#[typed_path("/firehose/streams")]
+#[typed_path("/firehose/hydrants")]
 pub struct Collection;
 
 #[derive(TypedPath, Deserialize)]
-#[typed_path("/firehose/streams/new")]
+#[typed_path("/firehose/hydrants/new")]
 pub struct New;
 
 #[derive(TypedPath, Deserialize)]
-#[typed_path("/firehose/streams/:id")]
+#[typed_path("/firehose/hydrants/:id")]
 pub struct Member {
-    id: String,
+    id: Uuid,
 }
 
 impl Member {
-    pub fn path(id: &str) -> String {
-        Self { id: id.to_string() }.to_string()
-    }
-
-    pub fn path_uuid(id: &Uuid) -> String {
-        Self { id: id.to_string() }.to_string()
+    pub fn path(id: &Uuid) -> String {
+        Self { id: *id }.to_string()
     }
 }
 
 #[derive(TypedPath, Deserialize)]
-#[typed_path("/firehose/streams/:id/edit")]
+#[typed_path("/firehose/hydrants/:id/edit")]
 pub struct Edit {
     id: Uuid,
 }
@@ -48,12 +48,18 @@ impl Edit {
     }
 }
 
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/firehose/hydrants/:id/move")]
+pub struct Move {
+    id: Uuid,
+}
+
 #[derive(Template)]
-#[template(path = "firehose/streams/index.html")]
+#[template(path = "firehose/hydrants/index.html")]
 struct Index {
     context: Context,
     user: Option<User>,
-    streams: Vec<firehose::Stream>,
+    hydrants: Vec<firehose::Hydrant>,
 }
 
 pub async fn index(
@@ -62,36 +68,30 @@ pub async fn index(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let streams = match firehose::list_streams(&mut db, &session.user).await {
-        Ok(streams) => streams,
-        Err(err) => return Err(context.error(Some(session), err.into())),
-    };
+    let hydrants = firehose::list_hydrants(&mut db, &session.user).await;
 
-    Ok(Index {
-        context,
-        user: Some(session.user),
-        streams,
-    })
-}
-
-#[derive(Template)]
-#[template(path = "firehose/streams/new.html")]
-struct NewStream {
-    context: Context,
-    user: Option<User>,
-    stream: StreamForm,
-    tag_options: Vec<TagOption>,
+    match hydrants {
+        Ok(hydrants) => Ok(Index {
+            context,
+            user: Some(session.user),
+            hydrants,
+        }),
+        Err(err) => Err(context.error(Some(session), err.into())),
+    }
 }
 
 #[derive(Default, Deserialize)]
-pub struct StreamForm {
+pub struct HydrantForm {
     name: String,
-    tags: Vec<String>,
+    url: String,
+    active: bool,
+    tags: Vec<String>, // TODO: allow creation here? yeah, probably
 
     errors: Option<Vec<String>>,
 }
 
-impl StreamForm {
+// TODO: I bet this can be derived
+impl HydrantForm {
     fn validate(&self) -> Result<(), Vec<String>> {
         if let Some(errors) = &self.errors {
             return Err(errors.to_vec());
@@ -101,6 +101,9 @@ impl StreamForm {
         if self.name.is_empty() {
             errors.push("Name cannot be blank".to_string());
         }
+        if self.url.is_empty() {
+            errors.push("URL cannot be blank".to_string());
+        }
 
         if errors.is_empty() {
             Ok(())
@@ -108,6 +111,15 @@ impl StreamForm {
             Err(errors)
         }
     }
+}
+
+#[derive(Template)]
+#[template(path = "firehose/hydrants/new.html")]
+struct NewHydrant {
+    context: Context,
+    user: Option<User>,
+    hydrant: HydrantForm,
+    tag_options: Vec<TagOption>,
 }
 
 pub async fn new(
@@ -121,10 +133,10 @@ pub async fn new(
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
-    Ok(NewStream {
+    Ok(NewHydrant {
         context,
         user: Some(session.user),
-        stream: Default::default(),
+        hydrant: Default::default(),
         tag_options: tag_options(tags),
     })
 }
@@ -134,8 +146,8 @@ pub async fn create(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-    Form(mut form): Form<StreamForm>,
-) -> Result<Redirect, impl IntoResponse> {
+    Form(mut form): Form<HydrantForm>,
+) -> Result<Redirect, Response> {
     let errors = match form.validate() {
         Ok(_) => None,
         Err(errors) => Some(errors),
@@ -158,25 +170,34 @@ pub async fn create(
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
-    match firehose::create_stream(&mut db, &session.user, &form.name, &tags).await {
-        Ok(stream) => Ok(Redirect::to(
+    let hydrant = firehose::create_hydrant(
+        &mut db,
+        &session.user,
+        &form.name,
+        &form.url,
+        form.active,
+        &tags,
+    )
+    .await;
+    match hydrant {
+        Ok(hydrant) => Ok(Redirect::to(
             &Member {
-                id: stream.stream.id.to_string(),
+                id: hydrant.hydrant.id,
             }
             .to_string(),
         )),
         Err(err) => {
-            tracing::error!({ ?err }, "could not create stream");
+            tracing::error!({ ?err }, "could not create hydrant");
 
             let tags = match firehose::list_tags(&mut db, &session.user).await {
                 Ok(tags) => tags,
                 Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
             };
 
-            Err(NewStream {
+            Err(NewHydrant {
                 context,
                 user: Some(session.user),
-                stream: form,
+                hydrant: form,
                 tag_options: tag_options(tags),
             }
             .into_response())
@@ -185,12 +206,11 @@ pub async fn create(
 }
 
 #[derive(Template)]
-#[template(path = "firehose/streams/show.html")]
-struct ShowPage {
+#[template(path = "firehose/hydrants/show.html")]
+struct Show {
     context: Context,
     user: Option<User>,
-    stream: firehose::Stream,
-    drops: Vec<firehose::Drop>,
+    hydrant: firehose::Hydrant,
 }
 
 pub async fn show(
@@ -199,53 +219,27 @@ pub async fn show(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let stream: anyhow::Result<firehose::Stream> = match id.as_str() {
-        "unread" => Ok(firehose::Stream::Status(firehose::StatusStream {
-            status: DropStatus::Unread,
-        })),
-        "read" => Ok(firehose::Stream::Status(firehose::StatusStream {
-            status: DropStatus::Read,
-        })),
-        "saved" => Ok(firehose::Stream::Status(firehose::StatusStream {
-            status: DropStatus::Saved,
-        })),
-
-        id => match Uuid::parse_str(id) {
-            Ok(id) => firehose::find_stream(&mut db, &session.user, id)
-                .await
-                .map(firehose::Stream::Custom),
-            Err(err) => Err(err.into()),
-        },
+    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
+        Ok(hydrant) => hydrant,
+        Err(err) => return Err(context.error(Some(session), err.into())),
     };
 
-    let stream = match stream {
-        Ok(stream) => stream,
-        Err(err) => {
-            tracing::error!({ ?err, ?session.user.id, ?id }, "Stream not found");
-            return Err(StatusCode::NOT_FOUND.into_response());
-        }
-    };
+    // TODO: show hydrant drops?
 
-    let drops = firehose::list_drops(&mut db, session.user.clone(), stream.filters()).await;
-
-    match drops {
-        Ok(drops) => Ok(ShowPage {
-            context,
-            user: Some(session.user),
-            stream,
-            drops,
-        }),
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+    Ok(Show {
+        context,
+        user: Some(session.user),
+        hydrant,
+    })
 }
 
 #[derive(Template)]
-#[template(path = "firehose/streams/edit.html")]
-struct EditStream {
+#[template(path = "firehose/hydrants/edit.html")]
+struct EditHydrant {
     context: Context,
     user: Option<User>,
     id: Uuid,
-    stream: StreamForm,
+    hydrant: HydrantForm,
     tag_options: Vec<TagOption>,
 }
 
@@ -255,8 +249,8 @@ pub async fn edit(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let stream = match firehose::find_stream(&mut db, &session.user, id).await {
-        Ok(stream) => stream,
+    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
+        Ok(hydrant) => hydrant,
         Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
     };
 
@@ -265,14 +259,16 @@ pub async fn edit(
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
-    Ok(EditStream {
+    Ok(EditHydrant {
         context,
         user: Some(session.user),
         id,
-        stream: StreamForm {
+        hydrant: HydrantForm {
             errors: None,
-            name: stream.stream.name,
-            tags: stream
+            name: hydrant.hydrant.name,
+            url: hydrant.hydrant.url,
+            active: hydrant.hydrant.active,
+            tags: hydrant
                 .tags
                 .iter()
                 .cloned()
@@ -288,15 +284,10 @@ pub async fn update(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-    Form(form): Form<StreamForm>,
+    Form(form): Form<HydrantForm>,
 ) -> Result<Redirect, Response> {
-    let id = match Uuid::parse_str(&id) {
-        Ok(id) => id,
-        Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
-    };
-
-    let stream = match firehose::find_stream(&mut db, &session.user, id).await {
-        Ok(stream) => stream,
+    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
+        Ok(hydrant) => hydrant,
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
@@ -316,32 +307,33 @@ pub async fn update(
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
-    let fields = firehose::StreamFields {
+    let fields = firehose::HydrantFields {
         name: Some(form.name.clone()),
+        url: Some(form.url.clone()),
+        active: Some(form.active),
         tag_ids: Some(tags.iter().map(|t| t.id).collect()),
     };
 
-    let stream = firehose::update_stream(&mut db, &session.user, &stream.stream, fields).await;
-    match stream {
-        Ok(stream) => Ok(Redirect::to(
+    match firehose::update_hydrant(&mut db, &session.user, &hydrant.hydrant, fields).await {
+        Ok(hydrant) => Ok(Redirect::to(
             &Member {
-                id: stream.stream.id.to_string(),
+                id: hydrant.hydrant.id,
             }
             .to_string(),
         )),
         Err(err) => {
-            tracing::error!({ ?err }, "could not update stream");
+            tracing::error!({ ?err }, "could not update hydrant");
 
             let tags = match firehose::list_tags(&mut db, &session.user).await {
                 Ok(tags) => tags,
                 Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
             };
 
-            Err(EditStream {
+            Err(EditHydrant {
                 context,
                 user: Some(session.user),
                 id,
-                stream: form,
+                hydrant: form,
                 tag_options: tag_options(tags),
             }
             .into_response())

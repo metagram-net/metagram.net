@@ -79,6 +79,8 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
         );
     }
 
+    // TODO(hydrants): seed hydrants without spamming real sites?
+
     Ok(())
 }
 

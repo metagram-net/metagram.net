@@ -1,0 +1,55 @@
+<div>
+  <label for="name">Name</label>
+  <div>
+    <input
+        type="text"
+        name="name"
+        class="w-full truncate"
+        autofocus
+        value="{{ hydrant.name }}"
+    />
+  </div>
+</div>
+
+<div>
+  <label for="url">URL</label>
+  <div>
+    <input
+        type="text"
+        name="url"
+        class="w-full truncate"
+        value="{{ hydrant.url }}"
+    />
+  </div>
+</div>
+
+<div>
+  <label for="tags">Tags</label>
+  <div>
+    <select class="w-full select-multiple" multiple>
+      {% for tag in tag_options %}
+        <option
+          value="{{tag.id}}"
+          data-color="{{tag.color}}"
+          {% if hydrant.tags.contains(tag.id) %}selected{% endif %}
+        >
+          "{{tag.name}}"
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+<div>
+  <label for="active">Active</label>
+  <div>
+    <input
+        type="checkbox"
+        name="active"
+        class="w-full truncate"
+        value="{{ hydrant.active }}"
+    />
+  </div>
+</div>
+
+{# TODO(hydrants): delete button #}

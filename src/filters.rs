@@ -11,3 +11,10 @@ pub fn inflect(count: i64, singular: &str, plural: &str) -> askama::Result<Strin
         _ => Ok(plural.to_string()),
     }
 }
+
+pub fn yes_no(b: &bool) -> askama::Result<&'static str> {
+    match b {
+        true => Ok("yes"),
+        false => Ok("no"),
+    }
+}

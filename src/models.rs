@@ -199,6 +199,31 @@ pub struct NewStream<'a> {
     pub tag_ids: Vec<Uuid>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
+#[diesel(table_name=schema::hydrants)]
+#[diesel(belongs_to(User))]
+pub struct Hydrant {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub url: String,
+    pub active: bool,
+    pub tag_ids: Vec<Uuid>,
+    pub fetched_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+}
+
+#[derive(Deserialize, Insertable, Debug, Clone)]
+#[diesel(table_name = schema::hydrants)]
+pub struct NewHydrant<'a> {
+    pub user_id: Uuid,
+    pub name: &'a str,
+    pub url: &'a str,
+    pub active: bool,
+    pub tag_ids: Vec<Uuid>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

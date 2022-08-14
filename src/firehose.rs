@@ -4,8 +4,8 @@ use diesel_async::{AsyncConnection, AsyncPgConnection};
 use uuid::Uuid;
 
 use crate::models::{
-    Drop as DropRecord, DropTag, NewDrop, NewDropTag, NewStream, NewTag, Stream as StreamRecord,
-    User,
+    Drop as DropRecord, DropTag, Hydrant as HydrantRecord, NewDrop, NewDropTag, NewHydrant,
+    NewStream, NewTag, Stream as StreamRecord, User,
 };
 pub use crate::models::{DropStatus, Tag};
 use crate::schema;
@@ -379,6 +379,7 @@ pub async fn update_tag(
     Ok(tag)
 }
 
+#[derive(Debug, Clone)]
 pub struct CustomStream {
     pub stream: StreamRecord,
     pub tags: Vec<Tag>,
@@ -397,6 +398,7 @@ impl CustomStream {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct StatusStream {
     pub status: DropStatus,
 }
@@ -410,6 +412,7 @@ impl StatusStream {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Stream {
     Custom(CustomStream),
     Status(StatusStream),
@@ -554,4 +557,141 @@ pub async fn update_stream(
     let tags = find_tags(db, user, &stream.tag_ids).await?;
 
     Ok(CustomStream { stream, tags })
+}
+
+#[derive(Debug, Clone)]
+pub struct Hydrant {
+    pub hydrant: HydrantRecord,
+    pub tags: Vec<Tag>,
+}
+
+pub async fn list_hydrants(
+    db: &mut AsyncPgConnection,
+    user: &User,
+) -> anyhow::Result<Vec<Hydrant>> {
+    use diesel::dsl::array;
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use schema::hydrants::dsl as h;
+    use schema::tags::dsl as t;
+
+    let hydrants: Vec<HydrantRecord> = HydrantRecord::belonging_to(&user)
+        .order_by(h::name.asc())
+        .load(db)
+        .await?;
+
+    let hydrant_ids: Vec<Uuid> = hydrants.iter().cloned().map(|s| s.id).collect();
+
+    let tags: Vec<(Tag, HydrantRecord)> = Tag::belonging_to(&user)
+        .inner_join(h::hydrants.on(h::tag_ids.contains(array((t::id,)))))
+        .filter(h::id.eq_any(&hydrant_ids))
+        .get_results(db)
+        .await?;
+
+    let tag_sets: Vec<Vec<Tag>> = {
+        let mut map: HashMap<Uuid, Vec<Tag>> = HashMap::new();
+
+        for (tag, hydrant) in tags {
+            map.entry(hydrant.id).or_insert_with(Vec::new).push(tag);
+        }
+
+        let mut out: Vec<Vec<Tag>> = Vec::new();
+        for id in hydrant_ids {
+            out.push(map.remove(&id).unwrap_or_default());
+        }
+        out
+    };
+
+    let res: Vec<Hydrant> = hydrants
+        .into_iter()
+        .zip(tag_sets)
+        .map(|(hydrant, tags)| Hydrant { hydrant, tags })
+        .collect();
+    Ok(res)
+}
+
+pub async fn find_hydrant(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    id: Uuid,
+) -> anyhow::Result<Hydrant> {
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+    use schema::tags::dsl as t;
+
+    let hydrant: HydrantRecord = HydrantRecord::belonging_to(&user)
+        .find(id)
+        .get_result(db)
+        .await?;
+
+    let tags: Vec<Tag> = Tag::belonging_to(&user)
+        .filter(t::id.eq_any(&hydrant.tag_ids))
+        .get_results(db)
+        .await?;
+
+    Ok(Hydrant { hydrant, tags })
+}
+
+pub async fn create_hydrant(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    name: &str,
+    url: &str,
+    active: bool,
+    tags: &[Tag],
+) -> anyhow::Result<Hydrant> {
+    use diesel::insert_into;
+    use diesel_async::RunQueryDsl;
+    use schema::hydrants::dsl as h;
+
+    let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
+    let user = user.clone();
+    let name = name.to_string();
+    let url = url.to_string();
+
+    db.transaction::<Hydrant, anyhow::Error, _>(|conn| {
+        Box::pin(async move {
+            let hydrant: HydrantRecord = insert_into(h::hydrants)
+                .values(&NewHydrant {
+                    user_id: user.id,
+                    name: &name,
+                    url: &url,
+                    active,
+                    tag_ids,
+                })
+                .get_result(conn)
+                .await?;
+
+            let tags = find_tags(conn, &user, &hydrant.tag_ids).await?;
+
+            Ok(Hydrant { hydrant, tags })
+        })
+    })
+    .await
+}
+
+// TODO: Move *Fields to models?
+#[derive(Default, AsChangeset)]
+#[diesel(table_name=schema::hydrants)]
+pub struct HydrantFields {
+    pub name: Option<String>,
+    pub url: Option<String>,
+    pub active: Option<bool>,
+    pub tag_ids: Option<Vec<Uuid>>,
+}
+
+pub async fn update_hydrant(
+    db: &mut AsyncPgConnection,
+    user: &User,
+    hydrant: &HydrantRecord,
+    fields: HydrantFields,
+) -> anyhow::Result<Hydrant> {
+    use diesel::update;
+    use diesel_async::RunQueryDsl;
+
+    let hydrant: HydrantRecord = update(hydrant).set(fields).get_result(db).await?;
+
+    let tags = find_tags(db, user, &hydrant.tag_ids).await?;
+
+    Ok(Hydrant { hydrant, tags })
 }

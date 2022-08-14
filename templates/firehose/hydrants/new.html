@@ -1,0 +1,19 @@
+{% extends "layouts/firehose.html" %}
+{% import "macros/form.html" as form %}
+
+{% block main %}
+<h1>New Hydrant</h1>
+
+<form
+  method="POST"
+  action="{{ crate::controllers::hydrants::Collection.to_string() }}"
+>
+  {% call form::errors("Hydrant", hydrant.errors) %}
+
+  {% include "_fields.html" %}
+
+  <div>
+    <button type="submit" class="btn btn-gray">Create Hydrant</button>
+  </div>
+</form>
+{% endblock %}

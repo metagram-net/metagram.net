@@ -1,0 +1,17 @@
+{% extends "layouts/firehose.html" %}
+
+{% block main %}
+  <h1>{{ hydrant.hydrant.name }}</h1>
+
+  <ul class="my-2 inline-block">
+    {% for tag in hydrant.tags %}
+      <li>{% include "firehose/tags/_badge.html" %}</li>
+    {% endfor %}
+  </ul>
+
+  <p>URL: <a href="{{ hydrant.hydrant.url }}">{{ hydrant.hydrant.url }}</a></p>
+
+  <p>Active: {{ hydrant.hydrant.active|yes_no }}</p>
+
+  <a href="{{ crate::controllers::hydrants::Edit::path(hydrant.hydrant.id) }}">Edit</a>
+{% endblock %}

@@ -3,6 +3,8 @@ use axum_extra::routing::RouterExt;
 
 use crate::controllers;
 
+// TODO: Should update routes be PUT/PATCH?
+
 pub fn build() -> Router {
     use controllers::*;
 
@@ -24,6 +26,12 @@ pub fn build() -> Router {
         .typed_get(drops::edit)
         .typed_post(drops::update)
         .typed_post(drops::r#move)
+        .typed_get(hydrants::index)
+        .typed_get(hydrants::new)
+        .typed_post(hydrants::create)
+        .typed_get(hydrants::show)
+        .typed_get(hydrants::edit)
+        .typed_post(hydrants::update)
         .typed_get(streams::index)
         .typed_get(streams::new)
         .typed_post(streams::create)
