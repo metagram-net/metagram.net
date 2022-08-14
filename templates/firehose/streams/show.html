@@ -7,7 +7,14 @@
   {% when firehose::Stream::Status with (stream) %}
   {% when firehose::Stream::Custom with (stream) %}
     <h1>{{ stream.stream.name }}</h1>
-    {# TODO: tag badges #}
+
+    <ul class="my-2 inline-block">
+      {% for tag in stream.tags %}
+        <li>{% include "firehose/tags/_badge.html" %}</li>
+      {% endfor %}
+    </ul>
+
+    {# TODO; <a href="{{ crate::controllers::streams::Edit::path_id(drop.id) }}">Edit</a> #}
   {% endmatch %}
 
   {% if drops.is_empty() %}
@@ -15,7 +22,7 @@
   {% else %}
     <ul>
       {% for drop in drops %}
-      {% include "firehose/drops/_card.html" %}
+        {% include "firehose/drops/_card.html" %}
       {% endfor %}
     </ul>
   {% endif %}

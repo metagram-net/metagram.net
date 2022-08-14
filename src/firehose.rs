@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use uuid::Uuid;
 
@@ -409,39 +411,56 @@ impl Stream {
     }
 }
 
+pub fn status_streams() -> Vec<Stream> {
+    let statuses = vec![DropStatus::Unread, DropStatus::Read, DropStatus::Saved];
+    statuses
+        .iter()
+        .cloned()
+        .map(|status| Stream::Status(StatusStream { status }))
+        .collect()
+}
+
 pub async fn list_streams(db: &mut AsyncPgConnection, user: &User) -> anyhow::Result<Vec<Stream>> {
+    use diesel::dsl::array;
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
     use schema::streams::dsl as s;
-
-    let mut res = vec![
-        Stream::Status(StatusStream {
-            status: DropStatus::Unread,
-        }),
-        Stream::Status(StatusStream {
-            status: DropStatus::Read,
-        }),
-        Stream::Status(StatusStream {
-            status: DropStatus::Saved,
-        }),
-    ];
+    use schema::tags::dsl as t;
 
     let streams: Vec<StreamRecord> = StreamRecord::belonging_to(&user)
         .order_by(s::name.asc())
         .load(db)
         .await?;
 
+    let stream_ids: Vec<Uuid> = streams.iter().cloned().map(|s| s.id).collect();
+
+    let tags: Vec<(Tag, StreamRecord)> = Tag::belonging_to(&user)
+        .inner_join(s::streams.on(s::tag_ids.contains(array((t::id,)))))
+        .filter(s::id.eq_any(&stream_ids))
+        .get_results(db)
+        .await?;
+
+    let tag_sets: Vec<Vec<Tag>> = {
+        let mut map: HashMap<Uuid, Vec<Tag>> = HashMap::new();
+
+        for (tag, stream) in tags {
+            map.entry(stream.id).or_insert_with(Vec::new).push(tag);
+        }
+
+        let mut out: Vec<Vec<Tag>> = Vec::new();
+        for id in stream_ids {
+            out.push(map.remove(&id).unwrap_or_default());
+        }
+        out
+    };
+
     let mut custom_streams: Vec<Stream> = streams
-        .iter()
-        .cloned()
-        .map(|stream| {
-            Stream::Custom(CustomStream {
-                stream,
-                tags: vec![], // TODO: Load stream tags
-            })
-        })
+        .into_iter()
+        .zip(tag_sets)
+        .map(|(stream, tags)| Stream::Custom(CustomStream { stream, tags }))
         .collect();
 
+    let mut res = status_streams();
     res.append(&mut custom_streams);
     Ok(res)
 }
@@ -453,16 +472,19 @@ pub async fn find_stream(
 ) -> anyhow::Result<CustomStream> {
     use diesel::prelude::*;
     use diesel_async::RunQueryDsl;
+    use schema::tags::dsl as t;
 
-    let stream = StreamRecord::belonging_to(&user)
+    let stream: StreamRecord = StreamRecord::belonging_to(&user)
         .find(id)
         .get_result(db)
         .await?;
 
-    Ok(CustomStream {
-        stream,
-        tags: vec![], // TODO: Load stream tags
-    })
+    let tags: Vec<Tag> = Tag::belonging_to(&user)
+        .filter(t::id.eq_any(&stream.tag_ids))
+        .get_results(db)
+        .await?;
+
+    Ok(CustomStream { stream, tags })
 }
 
 pub async fn create_stream(
