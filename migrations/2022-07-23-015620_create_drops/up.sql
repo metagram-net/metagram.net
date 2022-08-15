@@ -14,3 +14,5 @@ create table drops (
 );
 
 select diesel_manage_updated_at('drops');
+
+create index drops_moved_at on drops (moved_at);
