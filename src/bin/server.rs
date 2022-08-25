@@ -6,6 +6,7 @@ use diesel_async::{
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::signal;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -78,7 +79,33 @@ async fn main() {
     .unwrap();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
-    srv.run(addr).await.unwrap();
+    srv.run(addr, shutdown_signal()).await.unwrap();
+
+    tracing::info!("Goodbye! ✌");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c().await.expect("Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("Signal received, starting graceful shutdown");
 }
 
 #[derive(Debug, Clone)]

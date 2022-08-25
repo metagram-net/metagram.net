@@ -16,6 +16,7 @@ use diesel_async::{
     pooled_connection::deadpool::{self, Object, Pool},
     AsyncPgConnection,
 };
+use std::future::Future;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -126,10 +127,15 @@ impl Server {
         Ok(Self { router: app })
     }
 
-    pub async fn run(self, addr: SocketAddr) -> hyper::Result<()> {
+    pub async fn run(
+        self,
+        addr: SocketAddr,
+        signal: impl Future<Output = ()>,
+    ) -> hyper::Result<()> {
         tracing::info!("Listening on http://{}", addr);
         axum::Server::bind(&addr)
             .serve(self.router.into_make_service())
+            .with_graceful_shutdown(signal)
             .await
     }
 }
