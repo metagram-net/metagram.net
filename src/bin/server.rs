@@ -17,19 +17,47 @@ struct Config {
     #[serde(default)]
     mock_auth: bool,
 
+    #[serde(default, deserialize_with = "bool_from_string")]
+    dev_logging: bool,
+
     stytch_env: stytch::Env,
     stytch_project_id: String,
     stytch_secret: String,
 }
 
+/// Deserialize bool from String with custom value mapping
+fn bool_from_string<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match String::deserialize(deserializer)?.as_ref() {
+        "1" => Ok(true),
+        "TRUE" => Ok(true),
+        "true" => Ok(true),
+
+        "0" => Ok(false),
+        "FALSE" => Ok(false),
+        "false" => Ok(false),
+
+        other => Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::Str(other),
+            &"1, TRUE, true, 0, FALSE, false",
+        )),
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
-
     let config = match envy::from_env::<Config>() {
         Ok(settings) => settings,
         Err(err) => panic!("{:#?}", err),
     };
+
+    if config.dev_logging {
+        tracing_subscriber::fmt().pretty().init();
+    } else {
+        tracing_subscriber::fmt().json().init();
+    }
 
     let base_url = url::Url::parse(&config.base_url).expect("BASE_URL should be a valid URL");
 
