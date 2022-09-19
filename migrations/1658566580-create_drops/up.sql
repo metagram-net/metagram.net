@@ -13,6 +13,6 @@ create table drops (
     updated_at timestamp not null default now()
 );
 
-select diesel_manage_updated_at('drops');
+select manage_updated_at('drops');
 
 create index drops_moved_at on drops (moved_at);

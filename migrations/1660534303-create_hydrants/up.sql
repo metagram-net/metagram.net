@@ -12,4 +12,4 @@ create table hydrants (
     updated_at timestamp not null default now()
 );
 
-select diesel_manage_updated_at('hydrants');
+select manage_updated_at('hydrants');

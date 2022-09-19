@@ -1,14 +1,11 @@
-use clap::Parser;
+use clap::Args;
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 use fake::{faker::lorem::en as lorem, Dummy, Fake};
 use metagram::{auth, firehose};
 use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 
-#[derive(Parser, Debug)]
-#[clap(name = "Firehose Seed")]
-#[clap(about = "Generate fake test data for local development.", long_about = None)]
-#[clap(version)]
-struct Args {
+#[derive(Args, Debug)]
+pub struct Cli {
     #[clap(long, value_parser)]
     stytch_user_id: String,
 
@@ -16,27 +13,26 @@ struct Args {
     rng_seed: Option<u64>,
 }
 
+impl Cli {
+    pub async fn run(self) -> anyhow::Result<()> {
+        let mut db = {
+            let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+            AsyncPgConnection::establish(&url)
+                .await
+                .expect("database connection")
+        };
+
+        seed(&mut db, self).await
+    }
+}
+
 const NUM_DROPS: u8 = 50;
 const NUM_STREAMS: u8 = 5;
 const NUM_TAGS: u8 = 10;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
-
-    let mut db = {
-        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
-        AsyncPgConnection::establish(&url)
-            .await
-            .expect("database connection")
-    };
-
-    seed(&mut db, args).await
-}
-
-async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
+async fn seed(db: &mut AsyncPgConnection, cmd: Cli) -> anyhow::Result<()> {
     let mut rng = {
-        let rng_seed = match args.rng_seed {
+        let rng_seed = match cmd.rng_seed {
             Some(seed) => seed,
             None => chrono::Utc::now()
                 .timestamp()
@@ -48,7 +44,7 @@ async fn seed(db: &mut AsyncPgConnection, args: Args) -> anyhow::Result<()> {
     };
 
     // TODO: What if this actually had someone auth by email?
-    let user = auth::create_user(db, args.stytch_user_id).await?;
+    let user = auth::create_user(db, cmd.stytch_user_id).await?;
     println!("Created user: {}", user.id);
 
     let tags = seed_tags(db, &mut rng, &user).await?;

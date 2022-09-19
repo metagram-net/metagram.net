@@ -31,9 +31,12 @@ run_task = { name = ["services-down", "services", "db-wait", "migrate", "seed"] 
 
 [tasks.migrate]
 description = "Run database migrations"
-install_crate = { crate_name = "diesel_cli", binary = "diesel", test_arg = "--help" }
-command = "diesel"
-args = ["migration", "run"]
+command = "cargo"
+args = [
+    "run", "--bin", "dev",
+    "--",
+    "drift", "migrate",
+]
 
 [tasks.services]
 description = "Start dev services and run the app with change watchers"
@@ -53,4 +56,8 @@ args = ["down"]
 [tasks.seed]
 description = "Populate the database with some fake data"
 command = "cargo"
-args = ["run", "--bin", "seed", "--", "--stytch-user-id", "${STYTCH_USER_ID}"]
+args = [
+    "run", "--bin", "dev",
+    "--",
+    "seed", "--stytch-user-id", "${STYTCH_USER_ID}",
+]

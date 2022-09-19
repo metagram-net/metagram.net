@@ -6,4 +6,4 @@ create table users (
     updated_at timestamp not null default now()
 );
 
-select diesel_manage_updated_at('users');
+select manage_updated_at('users');

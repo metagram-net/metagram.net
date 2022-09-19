@@ -9,7 +9,7 @@ create table tags (
     updated_at timestamp not null default now()
 );
 
-select diesel_manage_updated_at('tags');
+select manage_updated_at('tags');
 
 create table drop_tags (
     id uuid primary key default gen_random_uuid(),
@@ -19,4 +19,4 @@ create table drop_tags (
     unique (drop_id, tag_id)
 );
 
-select diesel_manage_updated_at('drop_tags');
+select manage_updated_at('drop_tags');

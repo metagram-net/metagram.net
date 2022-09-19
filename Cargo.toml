@@ -30,7 +30,9 @@ r2d2 = "0.8.10"
 rand = "0.8.5"
 regex = "1.6.0"
 serde = { version = "1.0.137", features = ["derive"] }
+sqlx = { version = "0.6.1", features = ["runtime-tokio-native-tls", "postgres", "chrono"] }
 stytch = { path = "../stytch-rs" }
+tabwriter = "1.2.1"
 thiserror = "1.0.31"
 tokio = { version = "1.18.2", features = ["full"] }
 tower = "0.4.12"

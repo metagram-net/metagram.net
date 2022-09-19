@@ -9,4 +9,4 @@ create table streams (
     updated_at timestamp not null default now()
 );
 
-select diesel_manage_updated_at('streams');
+select manage_updated_at('streams');

@@ -93,7 +93,7 @@ impl TagForm {
             errors.push("Name cannot be blank".to_string());
         }
         lazy_static! {
-            static ref RE_COLOR: Regex = Regex::new("...").unwrap();
+            static ref RE_COLOR: Regex = Regex::new("^#[0-9a-fA-F]{6}$").unwrap();
         }
         if !RE_COLOR.is_match(&self.color) {
             errors.push(format!("Invalid color code: {}", self.color));
