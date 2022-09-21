@@ -31,7 +31,7 @@ rand = "0.8.5"
 regex = "1.6.0"
 serde = { version = "1.0.137", features = ["derive"] }
 sqlx = { version = "0.6.1", features = ["runtime-tokio-native-tls", "postgres", "chrono"] }
-stytch = { path = "../stytch-rs" }
+stytch = { git = "https://github.com/jdkaplan/stytch-rust" }
 tabwriter = "1.2.1"
 thiserror = "1.0.31"
 tokio = { version = "1.18.2", features = ["full"] }

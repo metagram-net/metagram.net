@@ -2212,6 +2212,7 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 [[package]]
 name = "stytch"
 version = "0.1.0"
+source = "git+https://github.com/jdkaplan/stytch-rust#5d9f9799700f97de989c4c026e514a3ee1c4ecec"
 dependencies = [
  "async-trait",
  "base64",
