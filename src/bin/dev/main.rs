@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
 
-mod drift;
 mod seed;
 
 #[derive(Parser, Debug)]
@@ -16,9 +15,6 @@ struct Cli {
 enum Cmd {
     /// Generate fake test data for local development.
     Seed(seed::Cli),
-
-    /// Run database migrations.
-    Drift(drift::Cli),
 }
 
 #[tokio::main]
@@ -27,6 +23,5 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Cmd::Seed(cmd) => cmd.run().await,
-        Cmd::Drift(cmd) => cmd.run().await,
     }
 }

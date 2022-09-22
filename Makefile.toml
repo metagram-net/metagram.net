@@ -31,12 +31,10 @@ run_task = { name = ["services-down", "services", "db-wait", "migrate", "seed"] 
 
 [tasks.migrate]
 description = "Run database migrations"
-command = "cargo"
-args = [
-    "run", "--bin", "dev",
-    "--",
-    "drift", "migrate",
-]
+install_crate = "drift"
+install_crate_args = ["--git", "https://github.com/jdkaplan/drift"]
+command = "drift"
+args = ["migrate"]
 
 [tasks.services]
 description = "Start dev services and run the app with change watchers"
