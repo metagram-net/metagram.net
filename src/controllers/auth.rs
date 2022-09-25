@@ -59,7 +59,10 @@ pub async fn login_form(
         return Err(context.error(session, AppError::CsrfMismatch));
     }
 
-    let res = match auth.send_magic_link(form.email.clone()).await {
+    let res = match auth
+        .send_magic_link(form.email.clone(), Authenticate.to_string())
+        .await
+    {
         Ok(res) => res,
         Err(err) => return Err(context.error(session, err.into())),
     };
@@ -111,7 +114,7 @@ pub async fn authenticate(
         }
         Err(err) => {
             tracing::error!({ stytch_user_id = ?res.user_id, ?err }, "find user by Stytch ID");
-            Err((StatusCode::BAD_REQUEST, Redirect::to("/login")).into_response())
+            Err((StatusCode::BAD_REQUEST, Redirect::to(&Login.to_string())).into_response())
         }
     }
 }

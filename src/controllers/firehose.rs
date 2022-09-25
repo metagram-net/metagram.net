@@ -12,8 +12,8 @@ pub struct Root;
 
 pub async fn index(_: Root, session: Option<Session>) -> impl IntoResponse {
     match session {
-        None => Redirect::to("/firehose/about"),
-        Some(_) => Redirect::to("/firehose/streams/unread"),
+        None => Redirect::to(&About.to_string()),
+        Some(_) => Redirect::to(&super::streams::Member::path("unread")),
     }
 }
 

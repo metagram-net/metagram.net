@@ -66,7 +66,7 @@ impl Move {
 }
 
 pub async fn index(_: Collection) -> Redirect {
-    Redirect::to("/firehose/streams/unread")
+    Redirect::to(&super::streams::Member::path("unread"))
 }
 
 #[derive(Default, Deserialize)]

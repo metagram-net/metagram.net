@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{models, PgConn};
 
-const SESSION_COOKIE_NAME: &str = "firehose_session";
+const SESSION_COOKIE_NAME: &str = "metagram_session";
 
 pub type Auth = Arc<dyn AuthN + Send + Sync>;
 
@@ -21,6 +21,7 @@ pub trait AuthN {
     async fn send_magic_link(
         &self,
         email: String,
+        callback_path: String,
     ) -> stytch::Result<stytch::magic_links::email::SendResponse>;
 
     async fn authenticate_magic_link(
@@ -55,10 +56,8 @@ where
     async fn from_request(
         req: &mut axum::extract::RequestParts<B>,
     ) -> Result<Self, Self::Rejection> {
-        let auth: Extension<Auth> = Extension::from_request(req).await.expect("extension: Auth");
-        let cookies = PrivateCookieJar::from_request(req)
-            .await
-            .expect("PrivateCookieJar");
+        let auth: Extension<Auth> = Extension::from_request(req).await.unwrap();
+        let cookies = PrivateCookieJar::from_request(req).await.unwrap();
 
         let PgConn(mut db) = PgConn::from_request(req).await?;
 
@@ -66,7 +65,7 @@ where
             Ok(session) => Ok(session),
             Err(err) => {
                 tracing::error!({ ?err }, "no active session");
-                Err(Redirect::to("/login").into_response())
+                Err(Redirect::to(&crate::controllers::auth::Login.to_string()).into_response())
             }
         }
     }
@@ -157,7 +156,8 @@ pub async fn revoke_session(
         Some(token) => token,
     };
 
-    let _res = auth.revoke_session(session_token).await?;
+    auth.revoke_session(session_token).await?;
+
     Ok(cookies.remove(Cookie::new(SESSION_COOKIE_NAME, "")))
 }
 
@@ -165,6 +165,7 @@ pub fn session_cookie(session_token: String) -> Cookie<'static> {
     Cookie::build(SESSION_COOKIE_NAME, session_token)
         .permanent()
         .secure(true)
+        .path("/")
         .finish()
 }
 
