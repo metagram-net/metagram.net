@@ -3,26 +3,9 @@
 {% block main %}
   <h1>Streams</h1>
 
-  {# TODO: big cards with tag badges inside #}
-  <ul class="list-bulleted">
+  <ul class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 my-4 items-stretch">
     {% for stream in streams %}
-      {% match stream %}
-      {% when firehose::Stream::Status with (stream) %}
-        {% let status = stream.status.to_string() %}
-        <li>
-          <a href="{{ crate::controllers::streams::Member::path(status.as_str()) }}">
-            {{ "{}"|format(status)|capitalize }}
-          </a>
-        </li>
-      {% when firehose::Stream::Custom with (stream) %}
-        <li>
-          <a href="{{ crate::controllers::streams::Member::path_uuid(stream.stream.id) }}">
-            {{ stream.stream.name }}
-          </a>
-
-          (<a href="{{ crate::controllers::streams::Edit::path(stream.stream.id) }}">edit</a>)
-        </li>
-      {% endmatch %}
+      <li class="contents">{% include "_card.html" %}</li>
     {% endfor %}
   </ul>
 
