@@ -213,7 +213,8 @@ pub async fn show(
         id => match Uuid::parse_str(id) {
             Ok(id) => firehose::find_stream(&mut db, &session.user, id)
                 .await
-                .map(firehose::Stream::Custom),
+                .map(firehose::Stream::Custom)
+                .map_err(Into::into),
             Err(err) => Err(err.into()),
         },
     };
@@ -226,7 +227,7 @@ pub async fn show(
         }
     };
 
-    let drops = firehose::list_drops(&mut db, session.user.clone(), stream.filters()).await;
+    let drops = firehose::list_drops(&mut db, &session.user, stream.filters()).await;
 
     match drops {
         Ok(drops) => Ok(ShowPage {

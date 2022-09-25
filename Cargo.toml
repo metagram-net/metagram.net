@@ -18,8 +18,6 @@ chrono = { version = "0.4.19", features = ["serde"] }
 clap = { version = "3.2.14", features = ["derive"] }
 cookie = { version = "0.16.0", features = ["private"] }
 derivative = "2.2.0"
-diesel = { version = "2.0.0-rc.1", features = ["postgres", "chrono", "uuid"] }
-diesel-async = { git = 'https://github.com/weiznich/diesel_async', version = "0.1.0", default-features = false, features = ["deadpool", "postgres"] }
 envy = "0.4.2"
 fake = "2.5.0"
 http = "0.2.7"
@@ -30,7 +28,7 @@ r2d2 = "0.8.10"
 rand = "0.8.5"
 regex = "1.6.0"
 serde = { version = "1.0.137", features = ["derive"] }
-sqlx = { version = "0.6.1", features = ["runtime-tokio-native-tls", "postgres", "chrono"] }
+sqlx = { version = "0.6.1", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid"] }
 stytch = { git = "https://github.com/jdkaplan/stytch-rust" }
 tabwriter = "1.2.1"
 thiserror = "1.0.31"

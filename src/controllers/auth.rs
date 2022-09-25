@@ -99,7 +99,7 @@ pub async fn authenticate(
     };
     tracing::info!("Successfully authenticated token for user {}", res.user_id);
 
-    match auth::find_user(&mut db, res.user_id.clone()).await {
+    match auth::find_user_stytch(&mut db, res.user_id.clone()).await {
         Ok(_) => {
             let cookie = auth::session_cookie(res.session_token);
 

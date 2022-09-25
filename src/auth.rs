@@ -5,12 +5,11 @@ use axum::{
 };
 use axum_extra::extract::PrivateCookieJar;
 use cookie::Cookie;
-use diesel::prelude::*;
-use diesel_async::AsyncPgConnection;
-use diesel_async::RunQueryDsl;
+use sqlx::PgExecutor;
 use std::sync::Arc;
+use uuid::Uuid;
 
-use crate::{models, schema, PgConn};
+use crate::{models, PgConn};
 
 const SESSION_COOKIE_NAME: &str = "firehose_session";
 
@@ -74,36 +73,53 @@ where
 }
 
 pub async fn create_user(
-    db: &mut AsyncPgConnection,
+    conn: impl PgExecutor<'_>,
     stytch_user_id: String,
-) -> anyhow::Result<models::User> {
-    use diesel::insert_into;
-    use schema::users::dsl as t;
-
-    let user: models::User = insert_into(t::users)
-        .values(&models::NewUser {
-            stytch_user_id: &stytch_user_id,
-        })
-        .get_result(db)
-        .await?;
-    Ok(user)
+) -> sqlx::Result<models::User> {
+    sqlx::query_as!(
+        models::User,
+        r#"
+        insert into users (stytch_user_id)
+        values ($1)
+        returning *
+        "#,
+        stytch_user_id,
+    )
+    .fetch_one(conn)
+    .await
 }
 
-pub async fn find_user(
-    db: &mut AsyncPgConnection,
+pub async fn find_user_stytch(
+    conn: impl PgExecutor<'_>,
     stytch_user_id: String,
-) -> anyhow::Result<models::User> {
-    use schema::users::dsl as t;
+) -> sqlx::Result<models::User> {
+    sqlx::query_as!(
+        models::User,
+        r#"
+        select * from users
+        where stytch_user_id = $1
+        "#,
+        stytch_user_id,
+    )
+    .fetch_one(conn)
+    .await
+}
 
-    let user: models::User = t::users
-        .filter(t::stytch_user_id.eq(stytch_user_id))
-        .get_result(db)
-        .await?;
-    Ok(user)
+pub async fn find_user(conn: impl PgExecutor<'_>, user_id: Uuid) -> sqlx::Result<models::User> {
+    sqlx::query_as!(
+        models::User,
+        r#"
+        select * from users
+        where id = $1
+        "#,
+        user_id,
+    )
+    .fetch_one(conn)
+    .await
 }
 
 async fn find_session(
-    db: &mut AsyncPgConnection,
+    conn: impl PgExecutor<'_>,
     auth: &Auth,
     cookies: PrivateCookieJar<cookie::Key>,
 ) -> anyhow::Result<Session> {
@@ -119,12 +135,7 @@ async fn find_session(
         }
     };
 
-    use schema::users::dsl::*;
-
-    let user: models::User = users
-        .filter(stytch_user_id.eq(session.user_id.clone()))
-        .get_result(db)
-        .await?;
+    let user = find_user_stytch(conn, session.user_id.clone()).await?;
 
     Ok(Session {
         user,
@@ -155,4 +166,31 @@ pub fn session_cookie(session_token: String) -> Cookie<'static> {
         .permanent()
         .secure(true)
         .finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::{Connection, PgConnection};
+
+    use super::*;
+
+    // TODO: Make this a test transaction and roll it back on pass.
+    async fn test_conn() -> sqlx::Result<PgConnection> {
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+
+        PgConnection::connect(&url).await
+    }
+
+    #[tokio::test]
+    async fn user_round_trip() {
+        let mut conn = test_conn().await.unwrap();
+
+        let stytch_user_id: String = uuid::Uuid::new_v4().to_string();
+
+        let user = create_user(&mut conn, stytch_user_id.clone())
+            .await
+            .unwrap();
+        let found = find_user_stytch(&mut conn, stytch_user_id).await.unwrap();
+        assert_eq!(user, found);
+    }
 }

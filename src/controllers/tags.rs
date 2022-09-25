@@ -4,8 +4,8 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::routing::TypedPath;
-use diesel_async::AsyncPgConnection;
 use serde::Deserialize;
+use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::filters;
@@ -57,9 +57,9 @@ pub async fn index(
     _: Collection,
     context: Context,
     session: Session,
-    PgConn(mut db): PgConn,
+    PgConn(mut conn): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let tags = firehose::list_tags(&mut db, &session.user).await;
+    let tags = firehose::list_tags(&mut conn, &session.user).await;
 
     match tags {
         Ok(tags) => Ok(Index {
@@ -127,7 +127,7 @@ pub async fn create(
     _: Collection,
     context: Context,
     session: Session,
-    PgConn(mut db): PgConn,
+    PgConn(mut conn): PgConn,
     Form(mut form): Form<TagForm>,
 ) -> Result<Redirect, impl IntoResponse> {
     let errors = match form.validate() {
@@ -136,7 +136,7 @@ pub async fn create(
     };
     form.errors = errors;
 
-    let tag = firehose::create_tag(&mut db, &session.user, &form.name, &form.color).await;
+    let tag = firehose::create_tag(&mut conn, &session.user, &form.name, &form.color).await;
     match tag {
         Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string())),
         Err(err) => {
@@ -166,14 +166,14 @@ pub async fn show(
     Member { id }: Member,
     context: Context,
     session: Session,
-    PgConn(mut db): PgConn,
+    PgConn(mut conn): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let tag = match firehose::find_tag(&mut db, &session.user, id).await {
+    let tag = match firehose::find_tag(&mut conn, &session.user, id).await {
         Ok(tag) => tag,
         Err(err) => return Err(context.error(Some(session), err.into())),
     };
 
-    let drops = match load_tag_drops(&mut db, &session.user, tag.clone()).await {
+    let drops = match load_tag_drops(&mut conn, &session.user, tag.clone()).await {
         Ok(drops) => drops,
         Err(err) => return Err(context.error(Some(session), err.into())),
     };
@@ -195,13 +195,13 @@ struct TagDrops {
 }
 
 async fn load_tag_drops(
-    db: &mut AsyncPgConnection,
+    conn: &mut PgConnection,
     user: &User,
     tag: Tag,
 ) -> anyhow::Result<TagDrops> {
     let unread_drops = firehose::list_drops(
-        db,
-        user.clone(),
+        &mut *conn,
+        user,
         firehose::DropFilters {
             tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Unread),
@@ -210,8 +210,8 @@ async fn load_tag_drops(
     .await?;
 
     let read_drops = firehose::list_drops(
-        db,
-        user.clone(),
+        &mut *conn,
+        user,
         firehose::DropFilters {
             tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Read),
@@ -220,8 +220,8 @@ async fn load_tag_drops(
     .await?;
 
     let saved_drops = firehose::list_drops(
-        db,
-        user.clone(),
+        &mut *conn,
+        user,
         firehose::DropFilters {
             tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Saved),
@@ -249,9 +249,9 @@ pub async fn edit(
     Edit { id }: Edit,
     context: Context,
     session: Session,
-    PgConn(mut db): PgConn,
+    PgConn(mut conn): PgConn,
 ) -> Result<impl IntoResponse, Response> {
-    let tag = firehose::find_tag(&mut db, &session.user, id).await;
+    let tag = firehose::find_tag(&mut conn, &session.user, id).await;
     match tag {
         Ok(tag) => Ok(EditTag {
             context,
@@ -271,10 +271,10 @@ pub async fn update(
     Member { id }: Member,
     context: Context,
     session: Session,
-    PgConn(mut db): PgConn,
+    PgConn(mut conn): PgConn,
     Form(form): Form<TagForm>,
 ) -> Result<Redirect, Response> {
-    let tag = match firehose::find_tag(&mut db, &session.user, id).await {
+    let tag = match firehose::find_tag(&mut conn, &session.user, id).await {
         Ok(tag) => tag,
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
@@ -284,7 +284,7 @@ pub async fn update(
         color: Some(form.color.clone()),
     };
 
-    let tag = firehose::update_tag(&mut db, &tag, fields).await;
+    let tag = firehose::update_tag(&mut conn, &session.user, tag, fields).await;
     match tag {
         Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string())),
         Err(err) => {

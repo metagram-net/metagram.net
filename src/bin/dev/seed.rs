@@ -1,8 +1,8 @@
 use clap::Args;
-use diesel_async::{AsyncConnection, AsyncPgConnection};
 use fake::{faker::lorem::en as lorem, Dummy, Fake};
 use metagram::{auth, firehose};
 use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
+use sqlx::{Connection, PgConnection};
 
 #[derive(Args, Debug)]
 pub struct Cli {
@@ -15,14 +15,12 @@ pub struct Cli {
 
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
-        let mut db = {
-            let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
-            AsyncPgConnection::establish(&url)
-                .await
-                .expect("database connection")
+        let conn = {
+            let url = std::env::var("DATABASE_URL").unwrap();
+            PgConnection::connect(&url).await.unwrap()
         };
 
-        seed(&mut db, self).await
+        seed(conn, self).await
     }
 }
 
@@ -30,7 +28,7 @@ const NUM_DROPS: u8 = 50;
 const NUM_STREAMS: u8 = 5;
 const NUM_TAGS: u8 = 10;
 
-async fn seed(db: &mut AsyncPgConnection, cmd: Cli) -> anyhow::Result<()> {
+async fn seed(mut conn: PgConnection, cmd: Cli) -> anyhow::Result<()> {
     let mut rng = {
         let rng_seed = match cmd.rng_seed {
             Some(seed) => seed,
@@ -44,15 +42,15 @@ async fn seed(db: &mut AsyncPgConnection, cmd: Cli) -> anyhow::Result<()> {
     };
 
     // TODO: What if this actually had someone auth by email?
-    let user = auth::create_user(db, cmd.stytch_user_id).await?;
+    let user = auth::create_user(&mut conn, cmd.stytch_user_id).await?;
     println!("Created user: {}", user.id);
 
-    let tags = seed_tags(db, &mut rng, &user).await?;
+    let tags = seed_tags(&mut conn, &mut rng, &user).await?;
     for tag in &tags {
         println!("Created tag: {} {}", tag.name, tag.color);
     }
 
-    let streams = seed_streams(db, &mut rng, &user, &tags).await?;
+    let streams = seed_streams(&mut conn, &mut rng, &user, &tags).await?;
     for stream in &streams {
         println!(
             "Created stream: {} {:?}",
@@ -61,7 +59,7 @@ async fn seed(db: &mut AsyncPgConnection, cmd: Cli) -> anyhow::Result<()> {
         );
     }
 
-    let drops = seed_drops(db, &mut rng, &user, &tags).await?;
+    let drops = seed_drops(&mut conn, &mut rng, &user, &tags).await?;
     for drop in &drops {
         let tags = drop
             .tags
@@ -81,7 +79,7 @@ async fn seed(db: &mut AsyncPgConnection, cmd: Cli) -> anyhow::Result<()> {
 }
 
 async fn seed_tags(
-    db: &mut AsyncPgConnection,
+    conn: &mut PgConnection,
     rng: &mut StdRng,
     user: &metagram::models::User,
 ) -> anyhow::Result<Vec<firehose::Tag>> {
@@ -89,14 +87,14 @@ async fn seed_tags(
     for _ in 0..NUM_TAGS {
         let name = capitalize(lorem::Word().fake_with_rng(rng));
         let color = Color::random(rng);
-        let tag = firehose::create_tag(db, user, &name, &color.css()).await?;
+        let tag = firehose::create_tag(&mut *conn, user, &name, &color.css()).await?;
         tags.push(tag);
     }
     Ok(tags)
 }
 
 async fn seed_streams(
-    db: &mut AsyncPgConnection,
+    conn: &mut PgConnection,
     rng: &mut StdRng,
     user: &metagram::models::User,
     all_tags: &Vec<firehose::Tag>,
@@ -106,21 +104,21 @@ async fn seed_streams(
         let phrase: Vec<String> = lorem::Words(1..3).fake_with_rng(rng);
         let name = capitalize(phrase.join(" "));
 
-        let tag_count = rng.gen_range(0..3);
+        let tag_count = rng.gen_range(1..3);
         let tags: Vec<firehose::Tag> = rng
             .sample_iter(Uniform::new(0, all_tags.len()))
             .take(tag_count)
             .map(|i| all_tags[i].clone())
             .collect();
 
-        let stream = firehose::create_stream(db, user, &name, &tags).await?;
+        let stream = firehose::create_stream(&mut *conn, user, &name, &tags).await?;
         streams.push(stream);
     }
     Ok(streams)
 }
 
 async fn seed_drops(
-    db: &mut AsyncPgConnection,
+    conn: &mut PgConnection,
     rng: &mut StdRng,
     user: &metagram::models::User,
     all_tags: &Vec<firehose::Tag>,
@@ -143,8 +141,8 @@ async fn seed_drops(
             .collect();
 
         let drop = firehose::create_drop(
-            db,
-            user.clone(),
+            &mut *conn,
+            user,
             title,
             article.url,
             Some(tags),
@@ -153,7 +151,7 @@ async fn seed_drops(
         .await?;
 
         let status: firehose::DropStatus = rng.gen();
-        let drop = firehose::move_drop(db, drop, status, chrono::Utc::now()).await?;
+        let drop = firehose::move_drop(&mut *conn, drop, status, chrono::Utc::now()).await?;
 
         drops.push(drop);
     }

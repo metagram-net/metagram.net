@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate diesel;
-
 use askama::Template;
 use axum::{
     extract::{Extension, RequestParts},
@@ -12,10 +9,7 @@ use axum::{
 use axum_csrf::{CsrfLayer, CsrfToken};
 use axum_extra::routing::SpaRouter;
 use derivative::Derivative;
-use diesel_async::{
-    pooled_connection::deadpool::{self, Object, Pool},
-    AsyncPgConnection,
-};
+use sqlx::PgPool;
 use std::future::Future;
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
@@ -26,9 +20,6 @@ use tower_http::{
 use tracing::Level;
 
 pub mod models;
-#[rustfmt::skip]
-pub mod schema;
-pub mod sql_types;
 pub mod view_models;
 pub use models::User;
 
@@ -42,9 +33,7 @@ mod controllers;
 mod filters;
 mod routes;
 
-type PgPool = Pool<AsyncPgConnection>;
-
-pub struct PgConn(Object<AsyncPgConnection>);
+pub struct PgConn(sqlx::pool::PoolConnection<sqlx::Postgres>);
 
 #[axum::async_trait]
 impl<B> axum::extract::FromRequest<B> for PgConn
@@ -59,11 +48,13 @@ where
         let pool: Extension<PgPool> = Extension::from_request(req)
             .await
             .expect("extension: PgPool");
-        let context = Context::from_request(req).await.expect("PrivateCookieJar");
 
-        match pool.get().await {
+        match pool.acquire().await {
             Ok(conn) => Ok(PgConn(conn)),
-            Err(err) => Err(context.error(None, err.into())),
+            Err(err) => {
+                let context = Context::from_request(req).await.unwrap();
+                Err(context.error(None, err.into()))
+            }
         }
     }
 }
@@ -160,7 +151,7 @@ enum AppError {
     StytchError(#[from] stytch::Error),
 
     #[error(transparent)]
-    DeadpoolError(#[from] deadpool::PoolError),
+    SqlxError(#[from] sqlx::Error),
 
     #[error(transparent)]
     Unhandled(#[from] anyhow::Error),
@@ -201,8 +192,8 @@ impl Context {
                 )
                     .into_response()
             }
-            DeadpoolError(err) => {
-                tracing::error!({ ?err }, "deadpool error");
+            SqlxError(err) => {
+                tracing::error!({ ?err }, "sqlx error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     InternalServerError {

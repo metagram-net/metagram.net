@@ -1,9 +1,6 @@
 use async_trait::async_trait;
-use diesel_async::{
-    pooled_connection::{deadpool::Pool, AsyncDieselConnectionManager},
-    AsyncPgConnection,
-};
 use serde::Deserialize;
+use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
@@ -94,8 +91,10 @@ async fn main() {
         }
     };
 
-    let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(config.database_url);
-    let database_pool = Pool::builder(manager).build().expect("database_pool");
+    let database_pool = PgPoolOptions::new()
+        .connect(&config.database_url)
+        .await
+        .expect("database_pool");
 
     let srv = metagram::Server::new(metagram::ServerConfig {
         auth,

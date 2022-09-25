@@ -1,25 +1,13 @@
 use chrono::NaiveDateTime as Timestamp;
-use diesel::{
-    deserialize::{self, FromSql},
-    pg::{Pg, PgValue},
-    serialize::{self, IsNull, Output, ToSql},
-    AsExpression, FromSqlRow, Insertable, Queryable,
-};
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
-use serde::Deserialize;
-use std::io::Write;
+use serde::{Deserialize, Serialize};
+use sqlx::{Decode, FromRow, Type};
 use uuid::Uuid;
 
-use crate::{schema, sql_types};
-
-// Remember: using `#[derive(Queryable)]` assumes that the order of fields on the `Model` struct
-// matches the order of columns in the `models` table (stored in `schema.rs`).
-
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable)]
-#[diesel(table_name=schema::users)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow, Decode)]
 pub struct User {
     pub id: Uuid,
     pub stytch_user_id: String,
@@ -27,15 +15,9 @@ pub struct User {
     pub updated_at: Timestamp,
 }
 
-#[derive(Deserialize, Insertable, Debug, Clone)]
-#[diesel(table_name = schema::users)]
-pub struct NewUser<'a> {
-    pub stytch_user_id: &'a str,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, FromSqlRow, AsExpression)]
-#[diesel(sql_type = sql_types::Drop_status)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "drop_status", rename_all = "lowercase")]
 pub enum DropStatus {
     Unread,
     Read,
@@ -53,28 +35,6 @@ impl std::fmt::Display for DropStatus {
     }
 }
 
-impl ToSql<sql_types::Drop_status, Pg> for DropStatus {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        match *self {
-            DropStatus::Unread => out.write_all(b"unread")?,
-            DropStatus::Read => out.write_all(b"read")?,
-            DropStatus::Saved => out.write_all(b"saved")?,
-        }
-        Ok(IsNull::No)
-    }
-}
-
-impl FromSql<sql_types::Drop_status, Pg> for DropStatus {
-    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
-        match bytes.as_bytes() {
-            b"unread" => Ok(DropStatus::Unread),
-            b"read" => Ok(DropStatus::Read),
-            b"saved" => Ok(DropStatus::Saved),
-            _ => Err("Unrecognized enum variant".into()),
-        }
-    }
-}
-
 impl Distribution<DropStatus> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DropStatus {
         match rng.gen_range(0..=2) {
@@ -85,9 +45,7 @@ impl Distribution<DropStatus> for Standard {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
-#[diesel(table_name=schema::drops)]
-#[diesel(belongs_to(User))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct Drop {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -127,20 +85,7 @@ impl Drop {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Insertable, Associations)]
-#[diesel(table_name = schema::drops)]
-#[diesel(belongs_to(User))]
-pub struct NewDrop<'a> {
-    pub user_id: Uuid,
-    pub title: Option<&'a str>,
-    pub url: &'a str,
-    pub status: DropStatus,
-    pub moved_at: Timestamp,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
-#[diesel(table_name=schema::tags)]
-#[diesel(belongs_to(User))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow, Decode)]
 pub struct Tag {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -154,34 +99,14 @@ impl Tag {
     pub const DEFAULT_COLOR: &'static str = "#EEEEEE";
 }
 
-#[derive(Deserialize, Insertable, Debug, Clone)]
-#[diesel(table_name = schema::tags)]
-pub struct NewTag<'a> {
-    pub user_id: Uuid,
-    pub name: &'a str,
-    pub color: &'a str,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
-#[diesel(table_name = schema::drop_tags)]
-#[diesel(belongs_to(Drop))]
-#[diesel(belongs_to(Tag))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow, Decode)]
 pub struct DropTag {
     pub id: Uuid,
     pub drop_id: Uuid,
     pub tag_id: Uuid,
 }
 
-#[derive(Deserialize, Insertable, Debug, Clone)]
-#[diesel(table_name = schema::drop_tags)]
-pub struct NewDropTag {
-    pub drop_id: Uuid,
-    pub tag_id: Uuid,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
-#[diesel(table_name=schema::streams)]
-#[diesel(belongs_to(User))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow, Decode)]
 pub struct Stream {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -191,17 +116,7 @@ pub struct Stream {
     pub updated_at: Timestamp,
 }
 
-#[derive(Deserialize, Insertable, Debug, Clone)]
-#[diesel(table_name = schema::streams)]
-pub struct NewStream<'a> {
-    pub user_id: Uuid,
-    pub name: &'a str,
-    pub tag_ids: Vec<Uuid>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Associations)]
-#[diesel(table_name=schema::hydrants)]
-#[diesel(belongs_to(User))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, FromRow)]
 pub struct Hydrant {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -212,16 +127,6 @@ pub struct Hydrant {
     pub fetched_at: Option<Timestamp>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
-}
-
-#[derive(Deserialize, Insertable, Debug, Clone)]
-#[diesel(table_name = schema::hydrants)]
-pub struct NewHydrant<'a> {
-    pub user_id: Uuid,
-    pub name: &'a str,
-    pub url: &'a str,
-    pub active: bool,
-    pub tag_ids: Vec<Uuid>,
 }
 
 #[cfg(test)]

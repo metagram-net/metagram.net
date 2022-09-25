@@ -1,154 +1,297 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
-use diesel_async::{AsyncConnection, AsyncPgConnection};
+use sqlx::{Connection, PgConnection, PgExecutor, QueryBuilder};
 use uuid::Uuid;
 
-use crate::models::{
-    Drop as DropRecord, DropTag, Hydrant as HydrantRecord, NewDrop, NewDropTag, NewHydrant,
-    NewStream, NewTag, Stream as StreamRecord, User,
-};
+use crate::models;
 pub use crate::models::{DropStatus, Tag};
-use crate::schema;
 
+type PgQueryBuilder<'a> = QueryBuilder<'a, sqlx::Postgres>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Drop {
-    pub drop: DropRecord,
-    pub tags: Vec<Tag>,
+    pub drop: models::Drop,
+    pub tags: Vec<models::Tag>,
+}
+
+// TODO: JoinAsBsRow + from_rows_one + from_rows_vec might generalize
+
+impl Drop {
+    fn from_row(row: JoinDropsTagsRow) -> Self {
+        Self {
+            drop: row.drop(),
+            tags: row.tag().into_iter().collect(),
+        }
+    }
+
+    fn from_rows_one(rows: Vec<JoinDropsTagsRow>) -> Self {
+        let v = Self::from_rows_vec(rows);
+        v[0].clone()
+    }
+
+    fn from_rows_vec(rows: Vec<JoinDropsTagsRow>) -> Vec<Self> {
+        let mut drop_ids: Vec<Uuid> = Vec::new();
+        let mut drop_builds: HashMap<Uuid, Self> = HashMap::new();
+
+        for row in rows {
+            let drop_id = row.drop_id;
+
+            match drop_builds.entry(drop_id) {
+                Entry::Occupied(mut entry) => {
+                    if let Some(tag) = row.tag() {
+                        entry.get_mut().tags.push(tag);
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(Self::from_row(row));
+                    drop_ids.push(drop_id);
+                }
+            }
+        }
+
+        let mut data: Vec<Self> = Vec::with_capacity(drop_ids.len());
+        for id in drop_ids.drain(0..) {
+            let drop = drop_builds.remove(&id).expect("id must be in map");
+            data.push(drop);
+        }
+        data
+    }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct DropFilters {
     pub status: Option<DropStatus>,
-    pub tags: Option<Vec<Tag>>,
+    pub tags: Option<Vec<models::Tag>>,
+}
+
+type Timestamp = chrono::NaiveDateTime;
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+struct JoinDropsTagsRow {
+    drop_id: Uuid,
+    drop_user_id: Uuid,
+    drop_title: Option<String>,
+    drop_url: String,
+    drop_status: DropStatus,
+    drop_moved_at: Timestamp,
+    drop_created_at: Timestamp,
+    drop_updated_at: Timestamp,
+
+    tag_id: Option<Uuid>,
+    tag_user_id: Option<Uuid>,
+    tag_name: Option<String>,
+    tag_color: Option<String>,
+    tag_created_at: Option<Timestamp>,
+    tag_updated_at: Option<Timestamp>,
+}
+
+impl JoinDropsTagsRow {
+    fn select() -> PgQueryBuilder<'static> {
+        QueryBuilder::new(
+            "
+            select
+
+              drops.id         as drop_id
+            , drops.user_id    as drop_user_id
+            , drops.title      as drop_title
+            , drops.url        as drop_url
+            , drops.status     as drop_status
+            , drops.moved_at   as drop_moved_at
+            , drops.created_at as drop_created_at
+            , drops.updated_at as drop_updated_at
+
+            , tags.id         as tag_id
+            , tags.user_id    as tag_user_id
+            , tags.name       as tag_name
+            , tags.color      as tag_color
+            , tags.created_at as tag_created_at
+            , tags.updated_at as tag_updated_at
+
+            from drops
+            left join drop_tags on drop_tags.drop_id = drops.id
+            left join tags on tags.id = drop_tags.tag_id
+            ",
+        )
+    }
+    fn drop(&self) -> models::Drop {
+        models::Drop {
+            id: self.drop_id,
+            user_id: self.drop_user_id,
+            title: self.drop_title.clone(),
+            url: self.drop_url.clone(),
+            status: self.drop_status,
+            moved_at: self.drop_moved_at,
+            created_at: self.drop_created_at,
+            updated_at: self.drop_updated_at,
+        }
+    }
+
+    fn tag(&self) -> Option<models::Tag> {
+        self.tag_id?;
+
+        Some(models::Tag {
+            id: self.tag_id.unwrap(),
+            user_id: self.tag_user_id.unwrap(),
+            name: self.tag_name.as_ref().unwrap().clone(),
+            color: self.tag_color.as_ref().unwrap().clone(),
+            created_at: self.tag_created_at.unwrap(),
+            updated_at: self.tag_updated_at.unwrap(),
+        })
+    }
 }
 
 pub async fn list_drops(
-    db: &mut AsyncPgConnection,
-    user: User,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
     filters: DropFilters,
 ) -> anyhow::Result<Vec<Drop>> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::drop_tags::dsl as dt;
-    use schema::drops::dsl as d;
-    use schema::tags::dsl as t;
+    let mut query = QueryBuilder::new(
+        "
+        with drop_ids as (
+          select drops.id
+          from drops
+          left join drop_tags on drop_tags.drop_id = drops.id
+          left join tags on tags.id = drop_tags.tag_id
+        ",
+    );
+    query.push(" where drops.user_id = ");
+    query.push_bind(user.id);
 
-    db.transaction::<Vec<Drop>, anyhow::Error, _>(|conn| {
-        Box::pin(async move {
-            let mut query = DropRecord::belonging_to(&user)
-                .left_join(dt::drop_tags.inner_join(t::tags))
-                .select(d::drops::all_columns())
-                .distinct()
-                .order_by(d::moved_at.asc())
-                .into_boxed();
+    if let Some(status) = filters.status {
+        query.push(" and drops.status = ");
+        query.push("CAST( ");
+        query.push_bind(status.to_string());
+        query.push(" as drop_status) ");
+    }
+    if let Some(tags) = filters.tags {
+        let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
 
-            if let Some(status) = filters.status {
-                query = query.filter(d::status.eq(status));
-            }
-            if let Some(tags) = filters.tags {
-                let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
-                query = query.filter(t::id.eq_any(tag_ids));
-            }
+        query.push(" and tags.id = ANY(");
+        query.push_bind(tag_ids);
+        query.push(")");
+    }
+    query.push(") "); // with
 
-            let drops: Vec<DropRecord> = query.load(conn).await?;
+    query.push(
+        "
+        select
+            drops.id as drop_id
+          , drops.user_id as drop_user_id
+          , drops.title as drop_title
+          , drops.url as drop_url
+          , drops.status as drop_status
+          , drops.moved_at as drop_moved_at
+          , drops.created_at as drop_created_at
+          , drops.updated_at as drop_updated_at
+          , tags.id as tag_id
+          , tags.user_id as tag_user_id
+          , tags.name as tag_name
+          , tags.color as tag_color
+          , tags.created_at as tag_created_at
+          , tags.updated_at as tag_updated_at
+        from
+          drops
+          left join drop_tags on drop_tags.drop_id = drops.id
+          left join tags on tags.id = drop_tags.tag_id
+        where drops.id in (select id from drop_ids)
+        order by
+            drops.moved_at asc
+          , tags.name asc
+        ",
+    );
 
-            // TODO: The query above probably sees enough data to skip the rest of this.
-
-            let drop_tags: Vec<Vec<(DropTag, Tag)>> = DropTag::belonging_to(&drops)
-                .inner_join(t::tags)
-                .load(conn)
-                .await?
-                .grouped_by(&drops);
-
-            let data = drops
-                .into_iter()
-                .zip(drop_tags)
-                .map(|(drop, dts)| {
-                    let mut tags: Vec<Tag> = dts.iter().cloned().map(|(_dt, tag)| tag).collect();
-                    tags.sort_by_key(|t| t.name.clone());
-                    Drop { drop, tags }
-                })
-                .collect::<Vec<_>>();
-
-            Ok(data)
-        })
-    })
-    .await
+    let rows: Vec<JoinDropsTagsRow> = query.build_query_as().fetch_all(conn).await?;
+    Ok(Drop::from_rows_vec(rows))
 }
 
-pub async fn find_drop(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> anyhow::Result<Drop> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::drops::dsl as d;
+pub async fn find_drop(
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+    id: Uuid,
+) -> anyhow::Result<Drop> {
+    let mut query = JoinDropsTagsRow::select();
+    query.push(" where drops.user_id = ");
+    query.push_bind(user.id);
+    query.push(" and drops.id = ");
+    query.push_bind(id);
 
-    db.transaction::<Drop, anyhow::Error, _>(|conn| {
-        let user_id = user.id;
+    let rows: Vec<JoinDropsTagsRow> = query.build_query_as().fetch_all(conn).await?;
+    Ok(Drop::from_rows_one(rows))
+}
 
-        Box::pin(async move {
-            let drop: DropRecord = d::drops
-                .filter(d::user_id.eq(user_id).and(d::id.eq(id)))
-                .get_result(conn)
-                .await?;
-
-            let tags = load_drop_tags(conn, &drop).await?;
-
-            Ok(Drop { drop, tags })
-        })
-    })
+async fn find_drop_record(
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+    id: Uuid,
+) -> sqlx::Result<models::Drop> {
+    sqlx::query_as(
+        "
+        select * from drops
+        where id = $1
+        and user_id = $2
+        ",
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_one(conn)
     .await
 }
 
 async fn load_drop_tags(
-    conn: &mut AsyncPgConnection,
-    drop: &DropRecord,
-) -> anyhow::Result<Vec<Tag>> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::drop_tags::dsl as dt;
-    use schema::tags::dsl as t;
-
-    let tag_ids: Vec<Uuid> = DropTag::belonging_to(&drop)
-        .select(dt::tag_id)
-        .load(conn)
-        .await?;
-
-    let tags: Vec<Tag> = t::tags.filter(t::id.eq_any(tag_ids)).load(conn).await?;
-
-    Ok(tags)
+    conn: impl PgExecutor<'_>,
+    drop: &models::Drop,
+) -> sqlx::Result<Vec<models::Tag>> {
+    sqlx::query_as!(
+        models::Tag,
+        "
+        select tags.*
+        from tags
+        join drop_tags on drop_tags.tag_id = tags.id
+        where drop_tags.drop_id = $1
+        ",
+        drop.id,
+    )
+    .fetch_all(conn)
+    .await
 }
 
 pub async fn create_drop(
-    db: &mut AsyncPgConnection,
-    user: User,
+    conn: &mut PgConnection,
+    user: &models::User,
     title: Option<String>,
     url: String,
     tags: Option<Vec<TagSelector>>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<Drop> {
-    use diesel::insert_into;
-    use diesel_async::RunQueryDsl;
-    use schema::drops::dsl as t;
+    let user = user.clone();
 
-    db.transaction::<Drop, anyhow::Error, _>(|conn| {
+    conn.transaction(|tx| {
         Box::pin(async move {
-            let drop: DropRecord = insert_into(t::drops)
-                .values(&NewDrop {
-                    user_id: user.id,
-                    title: title.as_deref(),
-                    url: &url,
-                    status: DropStatus::Unread,
-                    moved_at: now.naive_utc(),
-                })
-                .get_result(conn)
-                .await?;
+            let drop: models::Drop = sqlx::query_as(
+                "
+                insert into drops
+                (user_id, title, url, status, moved_at)
+                values
+                ($1, $2, $3, $4::drop_status, $5)
+                returning *
+                ",
+            )
+            .bind(user.id)
+            .bind(title)
+            .bind(url)
+            .bind(DropStatus::Unread)
+            .bind(now.naive_utc())
+            .fetch_one(&mut *tx)
+            .await?;
 
             let selectors = tags;
             let mut tags = Vec::new();
             for sel in selectors.unwrap_or_default() {
-                let tag = find_or_create_tag(conn, &user, sel).await?;
+                let tag = find_or_create_tag(&mut *tx, &user, sel).await?;
                 tags.push(tag);
             }
 
-            attach_tags(conn, &drop, &tags).await?;
+            attach_tags(&mut *tx, &drop, &tags).await?;
 
             Ok(Drop { drop, tags })
         })
@@ -156,41 +299,64 @@ pub async fn create_drop(
     .await
 }
 
-#[derive(Default, AsChangeset)]
-#[diesel(table_name=schema::drops)]
+#[derive(Default)]
 pub struct DropFields {
     pub title: Option<String>,
     pub url: Option<String>,
 }
 
 pub async fn update_drop(
-    db: &mut AsyncPgConnection,
-    user: User,
-    drop: Drop,
+    conn: &mut PgConnection,
+    user: &models::User,
+    drop: &models::Drop,
     fields: DropFields,
     tags: Option<Vec<TagSelector>>,
 ) -> anyhow::Result<Drop> {
-    use diesel::update;
-    use diesel_async::RunQueryDsl;
+    let user = user.clone();
+    let drop_id = drop.id;
 
-    db.transaction::<Drop, anyhow::Error, _>(|conn| {
+    let mut query = QueryBuilder::new("update drops set");
+
+    let mut assign = query.separated(" , ");
+    let mut do_assign = false;
+    if let Some(title) = fields.title {
+        assign.push(" title = ");
+        assign.push_bind_unseparated(title);
+        do_assign = true;
+    }
+    if let Some(url) = fields.url {
+        assign.push(" url = ");
+        assign.push_bind_unseparated(url);
+        do_assign = true;
+    }
+
+    query.push(" where id = ");
+    query.push_bind(drop_id);
+    query.push(" and user_id = ");
+    query.push_bind(user.id);
+    query.push(" returning *");
+
+    conn.transaction(|tx| {
         Box::pin(async move {
-            let drop: DropRecord = update(&drop.drop).set(fields).get_result(conn).await?;
+            let drop = if do_assign {
+                query.build_query_as().fetch_one(&mut *tx).await?
+            } else {
+                find_drop_record(&mut *tx, &user, drop_id).await?
+            };
 
-            let tags = match tags {
-                None => load_drop_tags(conn, &drop).await?,
-                Some(selectors) => {
-                    let mut tags = Vec::new();
-                    for sel in selectors {
-                        let tag = find_or_create_tag(conn, &user, sel).await?;
-                        tags.push(tag);
-                    }
-
-                    attach_tags(conn, &drop, &tags).await?;
-                    detach_other_tags(conn, &drop, &tags).await?;
-
-                    tags
+            let tags = if let Some(selectors) = tags {
+                let mut tags = Vec::new();
+                for sel in selectors {
+                    let tag = find_or_create_tag(&mut *tx, &user, sel).await?;
+                    tags.push(tag);
                 }
+
+                attach_tags(&mut *tx, &drop, &tags).await?;
+                detach_other_tags(&mut *tx, &drop, &tags).await?;
+
+                tags
+            } else {
+                load_drop_tags(&mut *tx, &drop).await?
             };
 
             Ok(Drop { drop, tags })
@@ -200,53 +366,67 @@ pub async fn update_drop(
 }
 
 pub async fn move_drop(
-    db: &mut AsyncPgConnection,
+    conn: &mut PgConnection,
     drop: Drop,
     status: DropStatus,
     now: chrono::DateTime<chrono::Utc>,
-) -> anyhow::Result<Drop> {
-    use diesel::{update, ExpressionMethods};
-    use diesel_async::RunQueryDsl;
-    use schema::drops::dsl as d;
+) -> sqlx::Result<Drop> {
+    let query = sqlx::query_as(
+        "
+        update drops
+        set status = $2::drop_status, moved_at = $3
+        where id = $1
+        returning *
+        ",
+    )
+    .bind(drop.drop.id)
+    .bind(status)
+    .bind(now.naive_utc());
 
-    db.transaction::<Drop, anyhow::Error, _>(|conn| {
+    conn.transaction(|tx| {
         Box::pin(async move {
-            let drop: DropRecord = update(&drop.drop)
-                .set((d::status.eq(status), d::moved_at.eq(now.naive_utc())))
-                .get_result(conn)
-                .await?;
-
-            let tags = load_drop_tags(conn, &drop).await?;
-
+            let drop = query.fetch_one(&mut *tx).await?;
+            let tags = load_drop_tags(&mut *tx, &drop).await?;
             Ok(Drop { drop, tags })
         })
     })
     .await
 }
 
-pub async fn list_tags(db: &mut AsyncPgConnection, user: &User) -> anyhow::Result<Vec<Tag>> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::tags::dsl as t;
-
-    let res: Vec<Tag> = Tag::belonging_to(&user)
-        .order_by(t::name.asc())
-        .load(db)
-        .await?;
-    Ok(res)
+pub async fn list_tags(
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+) -> anyhow::Result<Vec<models::Tag>> {
+    let tags = sqlx::query_as!(
+        models::Tag,
+        "
+        select * from tags
+        where user_id = $1
+        ",
+        user.id,
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(tags)
 }
 
 pub async fn find_tags(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
     ids: &[Uuid],
-) -> anyhow::Result<Vec<Tag>> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::tags::dsl as t;
-
-    let query = Tag::belonging_to(&user).filter(t::id.eq_any(ids));
-    Ok(query.get_results(db).await?)
+) -> sqlx::Result<Vec<models::Tag>> {
+    let tags = sqlx::query_as!(
+        models::Tag,
+        "
+        select * from tags
+        where user_id = $1 and id = ANY($2)
+        ",
+        user.id,
+        ids,
+    )
+    .fetch_all(conn)
+    .await?;
+    Ok(tags)
 }
 
 #[derive(Debug, Clone)]
@@ -256,133 +436,152 @@ pub enum TagSelector {
 }
 
 pub async fn find_or_create_tag(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
     sel: TagSelector,
-) -> anyhow::Result<Tag> {
+) -> sqlx::Result<models::Tag> {
     match sel {
-        TagSelector::Find { id } => find_tag(db, user, id).await,
-        TagSelector::Create { name, color } => create_tag(db, user, &name, &color).await,
+        TagSelector::Find { id } => find_tag(conn, user, id).await,
+        TagSelector::Create { name, color } => create_tag(conn, user, &name, &color).await,
     }
 }
 
-pub async fn find_tag(db: &mut AsyncPgConnection, user: &User, id: Uuid) -> anyhow::Result<Tag> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-
-    Ok(Tag::belonging_to(&user).find(id).get_result(db).await?)
+pub async fn find_tag(
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+    id: Uuid,
+) -> sqlx::Result<models::Tag> {
+    sqlx::query_as!(
+        models::Tag,
+        "
+        select * from tags
+        where user_id = $1 and id = $2
+        ",
+        user.id,
+        id,
+    )
+    .fetch_one(conn)
+    .await
 }
 
 pub async fn create_tag(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
     name: &str,
     color: &str,
-) -> anyhow::Result<Tag> {
-    use diesel::insert_into;
-    use diesel_async::RunQueryDsl;
-    use schema::tags::dsl as t;
-
-    let tag: Tag = insert_into(t::tags)
-        .values(&NewTag {
-            user_id: user.id,
-            name,
-            color,
-        })
-        .get_result(db)
-        .await?;
-    Ok(tag)
-}
-
-pub async fn attach_tag(
-    db: &mut AsyncPgConnection,
-    drop: &DropRecord,
-    tag: &Tag,
-) -> anyhow::Result<DropTag> {
-    use diesel::insert_into;
-    use diesel_async::RunQueryDsl;
-    use schema::drop_tags::dsl as dt;
-
-    let dt: DropTag = insert_into(dt::drop_tags)
-        .values(&NewDropTag {
-            drop_id: drop.id,
-            tag_id: tag.id,
-        })
-        .on_conflict((dt::drop_id, dt::tag_id))
-        .do_nothing()
-        .get_result(db)
-        .await?;
-    Ok(dt)
+) -> sqlx::Result<models::Tag> {
+    sqlx::query_as!(
+        models::Tag,
+        "
+        insert into tags (user_id, name, color)
+        values ($1, $2, $3)
+        returning *
+        ",
+        user.id,
+        name,
+        color,
+    )
+    .fetch_one(conn)
+    .await
 }
 
 pub async fn attach_tags(
-    db: &mut AsyncPgConnection,
-    drop: &DropRecord,
-    tags: &[Tag],
-) -> anyhow::Result<Vec<DropTag>> {
-    use diesel::insert_into;
-    use diesel_async::RunQueryDsl;
-    use schema::drop_tags::dsl as dt;
+    conn: impl PgExecutor<'_>,
+    drop: &models::Drop,
+    tags: &[models::Tag],
+) -> sqlx::Result<Vec<models::DropTag>> {
+    if tags.is_empty() {
+        // This query would be a syntax error anyway, so skip it.
+        return Ok(vec![]);
+    }
 
-    let values = tags
-        .iter()
-        .map(|t| NewDropTag {
-            drop_id: drop.id,
-            tag_id: t.id,
-        })
-        .collect::<Vec<NewDropTag>>();
+    let mut query = QueryBuilder::new(
+        "
+        insert into drop_tags
+        (drop_id, tag_id)
+        ",
+    );
 
-    let dts: Vec<DropTag> = insert_into(dt::drop_tags)
-        .values(&values)
-        .on_conflict((dt::drop_id, dt::tag_id))
-        .do_nothing()
-        .get_results(db)
-        .await?;
-    Ok(dts)
+    query.push_values(tags.iter(), |mut q, tag| {
+        q.push_bind(drop.id).push_bind(tag.id);
+    });
+
+    query.push(" on conflict do nothing ");
+    query.push(" returning *");
+
+    query.build_query_as().fetch_all(conn).await
 }
 
 pub async fn detach_other_tags(
-    db: &mut AsyncPgConnection,
-    drop: &DropRecord,
-    tags: &[Tag],
-) -> anyhow::Result<()> {
-    use diesel::delete;
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::drop_tags::dsl as dt;
+    conn: impl PgExecutor<'_>,
+    drop: &models::Drop,
+    keep_tags: &[models::Tag],
+) -> sqlx::Result<Vec<models::DropTag>> {
+    if keep_tags.is_empty() {
+        // This query would be a syntax error anyway, so skip it.
+        return Ok(vec![]);
+    }
 
-    let tag_ids: Vec<Uuid> = tags.iter().map(|tag| tag.id).collect();
-
-    delete(dt::drop_tags.filter(dt::drop_id.eq(drop.id).and(dt::tag_id.ne_all(tag_ids))))
-        .execute(db)
-        .await?;
-
-    Ok(())
+    let tag_ids: Vec<Uuid> = keep_tags.iter().map(|tag| tag.id).collect();
+    sqlx::query_as!(
+        models::DropTag,
+        "
+        delete from drop_tags
+        where drop_id = $1
+        and not tag_id = ANY($2)
+        returning *
+        ",
+        drop.id,
+        &tag_ids,
+    )
+    .fetch_all(conn)
+    .await
 }
 
-#[derive(Default, AsChangeset)]
-#[diesel(table_name=schema::tags)]
+#[derive(Default)]
 pub struct TagFields {
     pub name: Option<String>,
     pub color: Option<String>,
 }
 
 pub async fn update_tag(
-    db: &mut AsyncPgConnection,
-    tag: &Tag,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+    tag: models::Tag,
     fields: TagFields,
-) -> anyhow::Result<Tag> {
-    use diesel::update;
-    use diesel_async::RunQueryDsl;
+) -> sqlx::Result<models::Tag> {
+    let mut query = QueryBuilder::new("update tags set");
 
-    let tag: Tag = update(tag).set(fields).get_result(db).await?;
-    Ok(tag)
+    let mut assign = query.separated(" , ");
+    let mut do_assign = false;
+    if let Some(name) = fields.name {
+        assign.push(" name = ");
+        assign.push_bind_unseparated(name);
+        do_assign = true;
+    }
+    if let Some(color) = fields.color {
+        assign.push(" color = ");
+        assign.push_bind_unseparated(color);
+        do_assign = true;
+    }
+
+    query.push(" where id = ");
+    query.push_bind(tag.id);
+    query.push(" and user_id = ");
+    query.push_bind(user.id);
+    query.push(" returning *");
+
+    if do_assign {
+        query.build_query_as().fetch_one(conn).await
+    } else {
+        find_tag(conn, user, tag.id).await
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomStream {
-    pub stream: StreamRecord,
-    pub tags: Vec<Tag>,
+    pub stream: models::Stream,
+    pub tags: Vec<models::Tag>,
 }
 
 impl CustomStream {
@@ -398,21 +597,25 @@ impl CustomStream {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StatusStream {
     pub status: DropStatus,
 }
 
 impl StatusStream {
+    pub fn new(status: DropStatus) -> Self {
+        Self { status }
+    }
+
     pub fn filters(&self) -> DropFilters {
         DropFilters {
-            status: Some(self.status.clone()),
+            status: Some(self.status),
             ..Default::default()
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stream {
     Custom(CustomStream),
     Status(StatusStream),
@@ -427,243 +630,457 @@ impl Stream {
     }
 }
 
-pub fn status_streams() -> Vec<Stream> {
+pub fn status_streams() -> Vec<StatusStream> {
     let statuses = vec![DropStatus::Unread, DropStatus::Read, DropStatus::Saved];
-    statuses
-        .iter()
-        .cloned()
-        .map(|status| Stream::Status(StatusStream { status }))
-        .collect()
+    statuses.iter().cloned().map(StatusStream::new).collect()
 }
 
-pub async fn list_streams(db: &mut AsyncPgConnection, user: &User) -> anyhow::Result<Vec<Stream>> {
-    use diesel::dsl::array;
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::streams::dsl as s;
-    use schema::tags::dsl as t;
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+struct JoinStreamsTagsRow {
+    stream_id: Uuid,
+    stream_user_id: Uuid,
+    stream_name: String,
+    stream_tag_ids: Vec<Uuid>,
+    stream_created_at: Timestamp,
+    stream_updated_at: Timestamp,
 
-    let streams: Vec<StreamRecord> = StreamRecord::belonging_to(&user)
-        .order_by(s::name.asc())
-        .load(db)
-        .await?;
+    tag_id: Uuid,
+    tag_user_id: Uuid,
+    tag_name: String,
+    tag_color: String,
+    tag_created_at: Timestamp,
+    tag_updated_at: Timestamp,
+}
 
-    let stream_ids: Vec<Uuid> = streams.iter().cloned().map(|s| s.id).collect();
+impl JoinStreamsTagsRow {
+    fn select() -> PgQueryBuilder<'static> {
+        QueryBuilder::new(
+            "
+            select
 
-    let tags: Vec<(Tag, StreamRecord)> = Tag::belonging_to(&user)
-        .inner_join(s::streams.on(s::tag_ids.contains(array((t::id,)))))
-        .filter(s::id.eq_any(&stream_ids))
-        .get_results(db)
-        .await?;
+              streams.id         as stream_id
+            , streams.user_id    as stream_user_id
+            , streams.name       as stream_name
+            , streams.tag_ids    as stream_tag_ids
+            , streams.created_at as stream_created_at
+            , streams.updated_at as stream_updated_at
 
-    let tag_sets: Vec<Vec<Tag>> = {
-        let mut map: HashMap<Uuid, Vec<Tag>> = HashMap::new();
+            , tags.id         as tag_id
+            , tags.user_id    as tag_user_id
+            , tags.name       as tag_name
+            , tags.color      as tag_color
+            , tags.created_at as tag_created_at
+            , tags.updated_at as tag_updated_at
 
-        for (tag, stream) in tags {
-            map.entry(stream.id).or_insert_with(Vec::new).push(tag);
+            from streams
+            join tags on tags.id = ANY(streams.tag_ids)
+            ",
+        )
+    }
+
+    fn stream(&self) -> models::Stream {
+        models::Stream {
+            id: self.stream_id,
+            user_id: self.stream_user_id,
+            name: self.stream_name.clone(),
+            tag_ids: self.stream_tag_ids.clone(),
+            created_at: self.stream_created_at,
+            updated_at: self.stream_updated_at,
+        }
+    }
+
+    fn tag(&self) -> models::Tag {
+        models::Tag {
+            id: self.tag_id,
+            user_id: self.tag_user_id,
+            name: self.tag_name.clone(),
+            color: self.tag_color.clone(),
+            created_at: self.tag_created_at,
+            updated_at: self.tag_updated_at,
+        }
+    }
+}
+
+impl CustomStream {
+    fn from_row(row: JoinStreamsTagsRow) -> Self {
+        Self {
+            stream: row.stream(),
+            tags: vec![row.tag()],
+        }
+    }
+
+    fn from_rows_one(rows: Vec<JoinStreamsTagsRow>) -> Self {
+        let v = Self::from_rows_vec(rows);
+        v[0].clone()
+    }
+
+    fn from_rows_vec(rows: Vec<JoinStreamsTagsRow>) -> Vec<Self> {
+        let mut stream_ids: Vec<Uuid> = Vec::new();
+        let mut stream_builds: HashMap<Uuid, Self> = HashMap::new();
+
+        for row in rows {
+            let stream_id = row.stream_id;
+
+            match stream_builds.entry(stream_id) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().tags.push(row.tag());
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(Self::from_row(row));
+                    stream_ids.push(stream_id);
+                }
+            }
         }
 
-        let mut out: Vec<Vec<Tag>> = Vec::new();
-        for id in stream_ids {
-            out.push(map.remove(&id).unwrap_or_default());
+        let mut data: Vec<Self> = Vec::with_capacity(stream_ids.len());
+        for id in stream_ids.drain(0..) {
+            let stream = stream_builds.remove(&id).expect("id must be in map");
+            data.push(stream);
         }
-        out
-    };
+        data
+    }
+}
 
-    let mut custom_streams: Vec<Stream> = streams
-        .into_iter()
-        .zip(tag_sets)
-        .map(|(stream, tags)| Stream::Custom(CustomStream { stream, tags }))
-        .collect();
+pub async fn custom_streams(
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+) -> sqlx::Result<Vec<CustomStream>> {
+    let user = user.clone();
 
-    let mut res = status_streams();
-    res.append(&mut custom_streams);
-    Ok(res)
+    let mut query = JoinStreamsTagsRow::select();
+    query.push(" where streams.user_id = ");
+    query.push_bind(user.id);
+
+    let rows: Vec<JoinStreamsTagsRow> = query.build_query_as().fetch_all(conn).await?;
+    Ok(CustomStream::from_rows_vec(rows))
+}
+
+pub async fn list_streams(
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+) -> anyhow::Result<Vec<Stream>> {
+    let mut common = status_streams();
+    let mut custom = custom_streams(conn, user).await?;
+
+    let mut all = Vec::with_capacity(common.len() + custom.len());
+    for stream in common.drain(0..) {
+        all.push(Stream::Status(stream))
+    }
+    for stream in custom.drain(0..) {
+        all.push(Stream::Custom(stream))
+    }
+    Ok(all)
 }
 
 pub async fn find_stream(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
     id: Uuid,
-) -> anyhow::Result<CustomStream> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::tags::dsl as t;
+) -> sqlx::Result<CustomStream> {
+    let user = user.clone();
 
-    let stream: StreamRecord = StreamRecord::belonging_to(&user)
-        .find(id)
-        .get_result(db)
-        .await?;
+    let mut query = JoinStreamsTagsRow::select();
+    query.push(" where streams.user_id = ");
+    query.push_bind(user.id);
+    query.push(" and streams.id = ");
+    query.push_bind(id);
 
-    let tags: Vec<Tag> = Tag::belonging_to(&user)
-        .filter(t::id.eq_any(&stream.tag_ids))
-        .get_results(db)
-        .await?;
+    let rows: Vec<JoinStreamsTagsRow> = query.build_query_as().fetch_all(conn).await?;
+    Ok(CustomStream::from_rows_one(rows))
+}
 
-    Ok(CustomStream { stream, tags })
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    #[error(transparent)]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error(transparent)]
+    Stream(#[from] StreamError),
+}
+
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum StreamError {
+    #[error("no tags specified")]
+    NoTags,
 }
 
 pub async fn create_stream(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: &mut PgConnection,
+    user: &models::User,
     name: &str,
-    tags: &[Tag],
-) -> anyhow::Result<CustomStream> {
-    use diesel::insert_into;
-    use diesel_async::RunQueryDsl;
-    use schema::streams::dsl as s;
+    tags: &[models::Tag],
+) -> Result<CustomStream, Error> {
+    if tags.is_empty() {
+        return Err(StreamError::NoTags)?;
+    }
 
-    let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
     let user = user.clone();
-    let name = name.to_string();
+    let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
 
-    db.transaction::<CustomStream, anyhow::Error, _>(|conn| {
+    let query = sqlx::query_as!(
+        models::Stream,
+        "
+        insert into streams
+        (user_id, name, tag_ids)
+        values
+        ($1, $2, $3)
+        returning *
+        ",
+        user.id,
+        name,
+        &tag_ids,
+    );
+
+    conn.transaction(|tx| {
         Box::pin(async move {
-            let stream: StreamRecord = insert_into(s::streams)
-                .values(&NewStream {
-                    user_id: user.id,
-                    name: &name,
-                    tag_ids,
-                })
-                .get_result(conn)
-                .await?;
-
-            let tags = find_tags(conn, &user, &stream.tag_ids).await?;
-
+            let stream = query.fetch_one(&mut *tx).await?;
+            let tags = find_tags(&mut *tx, &user, &stream.tag_ids).await?;
             Ok(CustomStream { stream, tags })
         })
     })
     .await
 }
 
-#[derive(Default, AsChangeset)]
-#[diesel(table_name=schema::streams)]
+#[derive(Default)]
 pub struct StreamFields {
     pub name: Option<String>,
     pub tag_ids: Option<Vec<Uuid>>,
 }
 
 pub async fn update_stream(
-    db: &mut AsyncPgConnection,
-    user: &User,
-    stream: &StreamRecord,
+    conn: &mut PgConnection,
+    user: &models::User,
+    stream: &models::Stream,
     fields: StreamFields,
-) -> anyhow::Result<CustomStream> {
-    use diesel::update;
-    use diesel_async::RunQueryDsl;
+) -> sqlx::Result<CustomStream> {
+    let user = user.clone();
+    let stream_id = stream.id;
 
-    let stream: StreamRecord = update(stream).set(fields).get_result(db).await?;
+    let mut query = QueryBuilder::new("update streams set");
 
-    let tags = find_tags(db, user, &stream.tag_ids).await?;
+    let mut assign = query.separated(" , ");
+    let mut do_assign = false;
+    if let Some(name) = fields.name {
+        assign.push(" name = ");
+        assign.push_bind_unseparated(name);
+        do_assign = true;
+    }
+    if let Some(tag_ids) = fields.tag_ids {
+        assign.push(" tag_ids = ");
+        assign.push_bind_unseparated(tag_ids);
+        do_assign = true;
+    }
 
-    Ok(CustomStream { stream, tags })
+    query.push(" where id = ");
+    query.push_bind(stream.id);
+    query.push(" and user_id = ");
+    query.push_bind(user.id);
+    query.push(" returning *");
+
+    conn.transaction(|tx| {
+        Box::pin(async move {
+            if do_assign {
+                let stream: models::Stream = query.build_query_as().fetch_one(&mut *tx).await?;
+                let tags = find_tags(&mut *tx, &user, &stream.tag_ids).await?;
+
+                Ok(CustomStream { stream, tags })
+            } else {
+                find_stream(&mut *tx, &user, stream_id).await
+            }
+        })
+    })
+    .await
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hydrant {
-    pub hydrant: HydrantRecord,
-    pub tags: Vec<Tag>,
+    pub hydrant: models::Hydrant,
+    pub tags: Vec<models::Tag>,
+}
+
+impl Hydrant {
+    fn from_row(row: JoinHydrantsTagsRow) -> Self {
+        Self {
+            hydrant: row.hydrant(),
+            tags: row.tag().into_iter().collect(),
+        }
+    }
+
+    fn from_rows_one(rows: Vec<JoinHydrantsTagsRow>) -> Self {
+        let v = Self::from_rows_vec(rows);
+        v[0].clone()
+    }
+
+    fn from_rows_vec(rows: Vec<JoinHydrantsTagsRow>) -> Vec<Self> {
+        let mut hydrant_ids: Vec<Uuid> = Vec::new();
+        let mut hydrant_builds: HashMap<Uuid, Self> = HashMap::new();
+
+        for row in rows {
+            let hydrant_id = row.hydrant_id;
+
+            match hydrant_builds.entry(hydrant_id) {
+                Entry::Occupied(mut entry) => {
+                    if let Some(tag) = row.tag() {
+                        entry.get_mut().tags.push(tag);
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(Self::from_row(row));
+                    hydrant_ids.push(hydrant_id);
+                }
+            }
+        }
+
+        let mut data: Vec<Self> = Vec::with_capacity(hydrant_ids.len());
+        for id in hydrant_ids.drain(0..) {
+            let hydrant = hydrant_builds.remove(&id).expect("id must be in map");
+            data.push(hydrant);
+        }
+        data
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+struct JoinHydrantsTagsRow {
+    hydrant_id: Uuid,
+    hydrant_user_id: Uuid,
+    hydrant_name: String,
+    hydrant_url: String,
+    hydrant_active: bool,
+    hydrant_tag_ids: Vec<Uuid>,
+    hydrant_fetched_at: Option<Timestamp>,
+    hydrant_created_at: Timestamp,
+    hydrant_updated_at: Timestamp,
+
+    tag_id: Option<Uuid>,
+    tag_user_id: Option<Uuid>,
+    tag_name: Option<String>,
+    tag_color: Option<String>,
+    tag_created_at: Option<Timestamp>,
+    tag_updated_at: Option<Timestamp>,
+}
+
+impl JoinHydrantsTagsRow {
+    fn select() -> PgQueryBuilder<'static> {
+        QueryBuilder::new(
+            "
+            select
+
+              hydrants.id         as hydrant_id
+            , hydrants.user_id    as hydrant_user_id
+            , hydrants.name       as hydrant_name
+            , hydrants.url        as hydrant_url
+            , hydrants.active     as hydrant_active
+            , hydrants.tag_ids    as hydrant_tag_ids
+            , hydrants.fetched_at as hydrant_fetched_at
+            , hydrants.created_at as hydrant_created_at
+            , hydrants.updated_at as hydrant_updated_at
+
+            , tags.id         as tag_id
+            , tags.user_id    as tag_user_id
+            , tags.name       as tag_name
+            , tags.color      as tag_color
+            , tags.created_at as tag_created_at
+            , tags.updated_at as tag_updated_at
+
+            from hydrants
+            left join tags on tags.id = ANY(hydrants.tag_ids)
+            ",
+        )
+    }
+
+    fn hydrant(&self) -> models::Hydrant {
+        models::Hydrant {
+            id: self.hydrant_id,
+            user_id: self.hydrant_user_id,
+            name: self.hydrant_name.clone(),
+            url: self.hydrant_url.clone(),
+            active: self.hydrant_active,
+            tag_ids: self.hydrant_tag_ids.clone(),
+            fetched_at: self.hydrant_fetched_at,
+            created_at: self.hydrant_created_at,
+            updated_at: self.hydrant_updated_at,
+        }
+    }
+
+    fn tag(&self) -> Option<models::Tag> {
+        self.tag_id?;
+
+        Some(models::Tag {
+            id: self.tag_id.unwrap(),
+            user_id: self.tag_user_id.unwrap(),
+            name: self.tag_name.as_ref().unwrap().clone(),
+            color: self.tag_color.as_ref().unwrap().clone(),
+            created_at: self.tag_created_at.unwrap(),
+            updated_at: self.tag_updated_at.unwrap(),
+        })
+    }
 }
 
 pub async fn list_hydrants(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
 ) -> anyhow::Result<Vec<Hydrant>> {
-    use diesel::dsl::array;
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::hydrants::dsl as h;
-    use schema::tags::dsl as t;
+    let user = user.clone();
 
-    let hydrants: Vec<HydrantRecord> = HydrantRecord::belonging_to(&user)
-        .order_by(h::name.asc())
-        .load(db)
-        .await?;
+    let mut query = JoinHydrantsTagsRow::select();
+    query.push(" where hydrants.user_id = ");
+    query.push_bind(user.id);
 
-    let hydrant_ids: Vec<Uuid> = hydrants.iter().cloned().map(|s| s.id).collect();
-
-    let tags: Vec<(Tag, HydrantRecord)> = Tag::belonging_to(&user)
-        .inner_join(h::hydrants.on(h::tag_ids.contains(array((t::id,)))))
-        .filter(h::id.eq_any(&hydrant_ids))
-        .get_results(db)
-        .await?;
-
-    let tag_sets: Vec<Vec<Tag>> = {
-        let mut map: HashMap<Uuid, Vec<Tag>> = HashMap::new();
-
-        for (tag, hydrant) in tags {
-            map.entry(hydrant.id).or_insert_with(Vec::new).push(tag);
-        }
-
-        let mut out: Vec<Vec<Tag>> = Vec::new();
-        for id in hydrant_ids {
-            out.push(map.remove(&id).unwrap_or_default());
-        }
-        out
-    };
-
-    let res: Vec<Hydrant> = hydrants
-        .into_iter()
-        .zip(tag_sets)
-        .map(|(hydrant, tags)| Hydrant { hydrant, tags })
-        .collect();
-    Ok(res)
+    let rows: Vec<JoinHydrantsTagsRow> = query.build_query_as().fetch_all(conn).await?;
+    Ok(Hydrant::from_rows_vec(rows))
 }
 
 pub async fn find_hydrant(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
     id: Uuid,
 ) -> anyhow::Result<Hydrant> {
-    use diesel::prelude::*;
-    use diesel_async::RunQueryDsl;
-    use schema::tags::dsl as t;
+    let user = user.clone();
 
-    let hydrant: HydrantRecord = HydrantRecord::belonging_to(&user)
-        .find(id)
-        .get_result(db)
-        .await?;
+    let mut query = JoinHydrantsTagsRow::select();
+    query.push(" where hydrants.user_id = ");
+    query.push_bind(user.id);
+    query.push(" and hydrants.id = ");
+    query.push_bind(id);
 
-    let tags: Vec<Tag> = Tag::belonging_to(&user)
-        .filter(t::id.eq_any(&hydrant.tag_ids))
-        .get_results(db)
-        .await?;
-
-    Ok(Hydrant { hydrant, tags })
+    let rows: Vec<JoinHydrantsTagsRow> = query.build_query_as().fetch_all(conn).await?;
+    Ok(Hydrant::from_rows_one(rows))
 }
 
 pub async fn create_hydrant(
-    db: &mut AsyncPgConnection,
-    user: &User,
+    conn: &mut PgConnection,
+    user: &models::User,
     name: &str,
     url: &str,
     active: bool,
-    tags: &[Tag],
-) -> anyhow::Result<Hydrant> {
-    use diesel::insert_into;
-    use diesel_async::RunQueryDsl;
-    use schema::hydrants::dsl as h;
-
-    let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
+    tags: &[models::Tag],
+) -> sqlx::Result<Hydrant> {
     let user = user.clone();
-    let name = name.to_string();
-    let url = url.to_string();
+    let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
 
-    db.transaction::<Hydrant, anyhow::Error, _>(|conn| {
+    let query = sqlx::query_as!(
+        models::Hydrant,
+        "
+        insert into hydrants
+        (user_id, name, url, active, tag_ids)
+        values
+        ($1, $2, $3, $4, $5)
+        returning *
+        ",
+        user.id,
+        name,
+        url,
+        active,
+        &tag_ids,
+    );
+
+    conn.transaction(|tx| {
         Box::pin(async move {
-            let hydrant: HydrantRecord = insert_into(h::hydrants)
-                .values(&NewHydrant {
-                    user_id: user.id,
-                    name: &name,
-                    url: &url,
-                    active,
-                    tag_ids,
-                })
-                .get_result(conn)
-                .await?;
-
-            let tags = find_tags(conn, &user, &hydrant.tag_ids).await?;
-
+            let hydrant = query.fetch_one(&mut *tx).await?;
+            let tags = find_tags(&mut *tx, &user, &hydrant.tag_ids).await?;
             Ok(Hydrant { hydrant, tags })
         })
     })
@@ -671,8 +1088,7 @@ pub async fn create_hydrant(
 }
 
 // TODO: Move *Fields to models?
-#[derive(Default, AsChangeset)]
-#[diesel(table_name=schema::hydrants)]
+#[derive(Default)]
 pub struct HydrantFields {
     pub name: Option<String>,
     pub url: Option<String>,
@@ -681,17 +1097,647 @@ pub struct HydrantFields {
 }
 
 pub async fn update_hydrant(
-    db: &mut AsyncPgConnection,
-    user: &User,
-    hydrant: &HydrantRecord,
+    conn: &mut PgConnection,
+    user: &models::User,
+    hydrant: &models::Hydrant,
     fields: HydrantFields,
 ) -> anyhow::Result<Hydrant> {
-    use diesel::update;
-    use diesel_async::RunQueryDsl;
+    let user = user.clone();
+    let hydrant_id = hydrant.id;
 
-    let hydrant: HydrantRecord = update(hydrant).set(fields).get_result(db).await?;
+    let mut query = QueryBuilder::new("update hydrants set");
 
-    let tags = find_tags(db, user, &hydrant.tag_ids).await?;
+    let mut assign = query.separated(" , ");
+    let mut do_assign = false;
+    if let Some(name) = fields.name {
+        assign.push(" name = ");
+        assign.push_bind_unseparated(name);
+        do_assign = true;
+    }
+    if let Some(url) = fields.url {
+        assign.push(" url = ");
+        assign.push_bind_unseparated(url);
+        do_assign = true;
+    }
+    if let Some(active) = fields.active {
+        assign.push(" active = ");
+        assign.push_bind_unseparated(active);
+        do_assign = true;
+    }
+    if let Some(tag_ids) = fields.tag_ids {
+        assign.push(" tag_ids = ");
+        assign.push_bind_unseparated(tag_ids);
+        do_assign = true;
+    }
 
-    Ok(Hydrant { hydrant, tags })
+    query.push(" where id = ");
+    query.push_bind(hydrant.id);
+    query.push(" and user_id = ");
+    query.push_bind(user.id);
+    query.push(" returning *");
+
+    conn.transaction(|tx| {
+        Box::pin(async move {
+            if do_assign {
+                let hydrant: models::Hydrant = query.build_query_as().fetch_one(&mut *tx).await?;
+                let tags = find_tags(&mut *tx, &user, &hydrant.tag_ids).await?;
+
+                Ok(Hydrant { hydrant, tags })
+            } else {
+                find_hydrant(&mut *tx, &user, hydrant_id).await
+            }
+        })
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::SubsecRound;
+    use sqlx::{Connection, PgConnection};
+
+    use super::*;
+    use crate::auth;
+
+    // TODO: Make this a test transaction and roll it back on pass.
+    async fn test_conn() -> sqlx::Result<PgConnection> {
+        let url = std::env::var("TEST_DATABASE_URL").unwrap();
+
+        PgConnection::connect(&url).await
+    }
+
+    async fn test_user(conn: &mut PgConnection) -> sqlx::Result<models::User> {
+        let stytch_user_id: String = uuid::Uuid::new_v4().to_string();
+
+        auth::create_user(conn, stytch_user_id).await
+    }
+
+    #[tokio::test]
+    async fn minimal_drop() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let created = create_drop(
+            &mut conn,
+            &user,
+            None,
+            "https://example.com/lorem-ipsum".to_string(),
+            None,
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+
+        let found = find_drop(&mut conn, &user, created.drop.id).await.unwrap();
+        assert_eq!(found, created);
+    }
+
+    #[tokio::test]
+    async fn maximal_drop() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let coffee = create_tag(&mut conn, &user, "Coffee", "#c0ffee")
+            .await
+            .unwrap();
+
+        let created = create_drop(
+            &mut conn,
+            &user,
+            Some("Lorem Ipsum".to_string()),
+            "https://example.com/lorem-ipsum".to_string(),
+            Some(vec![
+                TagSelector::Find { id: coffee.id },
+                TagSelector::Create {
+                    name: "ABC".to_string(),
+                    color: models::Tag::DEFAULT_COLOR.to_string(),
+                },
+            ]),
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+
+        let found = find_drop(&mut conn, &user, created.drop.id).await.unwrap();
+        assert_eq!(found, created);
+
+        let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
+        assert_eq!(tag_names, vec!["Coffee", "ABC"]);
+    }
+
+    #[tokio::test]
+    async fn update_drop_fields() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let drop = create_drop(
+            &mut conn,
+            &user,
+            None,
+            "https://example.com/lorem-ipsum".to_string(),
+            None,
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+
+        let fields = DropFields {
+            title: Some("Dolor Sit".to_string()),
+            url: Some("https://example.com/dolor-sit".to_string()),
+        };
+        let tags = None;
+
+        let updated = update_drop(&mut conn, &user, &drop.drop, fields, tags)
+            .await
+            .unwrap();
+
+        let found = find_drop(&mut conn, &user, drop.drop.id).await.unwrap();
+        assert_eq!(found, updated);
+
+        assert_eq!(found.drop.title, Some("Dolor Sit".to_string()));
+        assert_eq!(found.drop.url, "https://example.com/dolor-sit".to_string(),);
+    }
+
+    #[tokio::test]
+    async fn update_drop_tags() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let coffee = create_tag(&mut conn, &user, "Coffee", "#c0ffee")
+            .await
+            .unwrap();
+
+        let drop = create_drop(
+            &mut conn,
+            &user,
+            None,
+            "https://example.com/lorem-ipsum".to_string(),
+            Some(vec![TagSelector::Find { id: coffee.id }]),
+            chrono::Utc::now(),
+        )
+        .await
+        .unwrap();
+
+        let fields = Default::default();
+        let tags = Some(vec![TagSelector::Create {
+            name: "ABC".to_string(),
+            color: models::Tag::DEFAULT_COLOR.to_string(),
+        }]);
+
+        let updated = update_drop(&mut conn, &user, &drop.drop, fields, tags)
+            .await
+            .unwrap();
+
+        let found = find_drop(&mut conn, &user, drop.drop.id).await.unwrap();
+
+        assert_eq!(found.drop, updated.drop);
+
+        let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
+        assert_eq!(tag_names, vec!["ABC"]);
+    }
+
+    #[tokio::test]
+    async fn change_drop_status() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let now = chrono::Utc::now();
+
+        let drop = create_drop(
+            &mut conn,
+            &user,
+            None,
+            "https://example.com/lorem-ipsum".to_string(),
+            None,
+            now,
+        )
+        .await
+        .unwrap();
+
+        let drop_id = drop.drop.id;
+
+        let moved = move_drop(
+            &mut conn,
+            drop,
+            DropStatus::Read,
+            now + chrono::Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+
+        let found = find_drop(&mut conn, &user, drop_id).await.unwrap();
+        assert_eq!(found, moved);
+
+        // DB timestamps have microsecond precision, so truncate the local timestamp to the same
+        // number of subsecond digits (6).
+        assert_eq!(
+            found.drop.moved_at,
+            (now + chrono::Duration::minutes(5))
+                .naive_utc()
+                .trunc_subsecs(6)
+        );
+    }
+
+    #[tokio::test]
+    async fn list_drops_by_status() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+        let now = chrono::Utc::now();
+
+        let mut unread = Vec::new();
+        let mut read = Vec::new();
+        for i in 0..10 {
+            let mut drop = create_drop(
+                &mut conn,
+                &user,
+                None,
+                format!("https://example.com/filtering/{}", i),
+                None,
+                now,
+            )
+            .await
+            .unwrap();
+
+            if i % 2 == 0 {
+                drop = move_drop(&mut conn, drop, DropStatus::Read, now)
+                    .await
+                    .unwrap();
+                read.push(drop);
+            } else {
+                unread.push(drop);
+            }
+        }
+
+        let found_unread = list_drops(
+            &mut conn,
+            &user,
+            DropFilters {
+                status: Some(DropStatus::Unread),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(found_unread, unread);
+    }
+
+    #[tokio::test]
+    async fn list_drops_by_tags() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+        let now = chrono::Utc::now();
+
+        let mut tags = Vec::new();
+        for i in 0..3 {
+            let tag = create_tag(&mut conn, &user, &i.to_string(), models::Tag::DEFAULT_COLOR)
+                .await
+                .unwrap();
+
+            tags.push(tag);
+        }
+
+        let mut drops = Vec::new();
+        for i in 0..3 {
+            let sel = tags[0..i]
+                .iter()
+                .cloned()
+                .map(|tag| TagSelector::Find { id: tag.id })
+                .collect();
+
+            let drop = create_drop(
+                &mut conn,
+                &user,
+                None,
+                format!("https://example.com/filtering/{}", i),
+                Some(sel),
+                now,
+            )
+            .await
+            .unwrap();
+
+            drops.push(drop);
+        }
+
+        for i in 0..3 {
+            dbg!(i);
+            let found = list_drops(
+                &mut conn,
+                &user,
+                DropFilters {
+                    tags: Some(vec![tags[i].clone()]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+            let expected = &drops[(3 - i)..];
+            assert_eq!(found, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn update_tag_fields() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let tag = create_tag(&mut conn, &user, "Work", "#0000ff")
+            .await
+            .unwrap();
+
+        let tag_id = tag.id;
+
+        let fields = TagFields {
+            name: Some("Play".to_string()),
+            color: Some("#00ff00".to_string()),
+        };
+
+        let updated = update_tag(&mut conn, &user, tag, fields).await.unwrap();
+
+        let found = find_tag(&mut conn, &user, tag_id).await.unwrap();
+        assert_eq!(found, updated);
+
+        assert_eq!(found.name, "Play".to_string());
+        assert_eq!(found.color, "#00ff00".to_string());
+    }
+
+    #[tokio::test]
+    async fn empty_stream() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let res = create_stream(&mut conn, &user, "Empty", &[]).await;
+        let err = res.unwrap_err();
+        assert!(matches!(err, Error::Stream(StreamError::NoTags)));
+    }
+
+    #[tokio::test]
+    async fn stream_with_tags() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+            .await
+            .unwrap();
+
+        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
+            .await
+            .unwrap();
+
+        let created = create_stream(&mut conn, &user, "Colors", &vec![red, blue])
+            .await
+            .unwrap();
+
+        let found = find_stream(&mut conn, &user, created.stream.id)
+            .await
+            .unwrap();
+        assert_eq!(created, found);
+
+        let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
+        assert_eq!(tag_names, vec!["Red", "Blue"]);
+    }
+
+    #[tokio::test]
+    async fn change_stream_fields() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+            .await
+            .unwrap();
+
+        let stream = create_stream(&mut conn, &user, "Oops!", &[red])
+            .await
+            .unwrap();
+
+        let green = create_tag(&mut conn, &user, "Green", "#00ff00")
+            .await
+            .unwrap();
+
+        let fields = StreamFields {
+            name: Some("Yay!".to_string()),
+            tag_ids: Some(vec![green.id]),
+        };
+
+        let updated = update_stream(&mut conn, &user, &stream.stream, fields)
+            .await
+            .unwrap();
+
+        let found = find_stream(&mut conn, &user, stream.stream.id)
+            .await
+            .unwrap();
+        assert_eq!(updated, found);
+
+        assert_eq!(found.stream.name, "Yay!".to_string());
+
+        let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
+        assert_eq!(tag_names, vec!["Green"]);
+    }
+
+    #[tokio::test]
+    async fn list_streams_default() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let found = list_streams(&mut conn, &user).await.unwrap();
+
+        let expected = vec![
+            Stream::Status(StatusStream::new(DropStatus::Unread)),
+            Stream::Status(StatusStream::new(DropStatus::Read)),
+            Stream::Status(StatusStream::new(DropStatus::Saved)),
+        ];
+
+        assert_eq!(found, expected);
+    }
+
+    #[tokio::test]
+    async fn list_streams_custom() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+            .await
+            .unwrap();
+
+        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
+            .await
+            .unwrap();
+
+        let colors = create_stream(&mut conn, &user, "Colors", &vec![red, blue.clone()])
+            .await
+            .unwrap();
+
+        let only_blue = create_stream(&mut conn, &user, "Only Blue", &[blue.clone()])
+            .await
+            .unwrap();
+
+        let found = list_streams(&mut conn, &user).await.unwrap();
+
+        let expected = vec![
+            Stream::Status(StatusStream::new(DropStatus::Unread)),
+            Stream::Status(StatusStream::new(DropStatus::Read)),
+            Stream::Status(StatusStream::new(DropStatus::Saved)),
+            Stream::Custom(CustomStream { ..colors }),
+            Stream::Custom(CustomStream { ..only_blue }),
+        ];
+        assert_eq!(found, expected);
+    }
+
+    #[tokio::test]
+    async fn simple_hydrant() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let created = create_hydrant(
+            &mut conn,
+            &user,
+            "Simple",
+            "https://example.com/simple",
+            true,
+            &[],
+        )
+        .await
+        .unwrap();
+
+        let found = find_hydrant(&mut conn, &user, created.hydrant.id)
+            .await
+            .unwrap();
+        assert_eq!(created, found);
+
+        assert_eq!(found.hydrant.name, "Simple".to_string());
+        assert_eq!(found.hydrant.url, "https://example.com/simple".to_string());
+        assert!(found.hydrant.active);
+        assert_eq!(found.tags, vec![]);
+    }
+
+    #[tokio::test]
+    async fn tagged_hydrant() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+            .await
+            .unwrap();
+
+        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
+            .await
+            .unwrap();
+
+        let created = create_hydrant(
+            &mut conn,
+            &user,
+            "Painted",
+            "https://example.com/painted",
+            true,
+            &vec![red, blue],
+        )
+        .await
+        .unwrap();
+
+        let found = find_hydrant(&mut conn, &user, created.hydrant.id)
+            .await
+            .unwrap();
+        assert_eq!(created, found);
+
+        let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
+        assert_eq!(tag_names, vec!["Red", "Blue"]);
+    }
+
+    #[tokio::test]
+    async fn change_hydrant_fields() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let black = create_tag(&mut conn, &user, "Black", "#ff0000")
+            .await
+            .unwrap();
+
+        let hydrant = create_hydrant(
+            &mut conn,
+            &user,
+            "The Rolling Stones",
+            "https://example.com/painted",
+            true,
+            &[black],
+        )
+        .await
+        .unwrap();
+
+        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
+            .await
+            .unwrap();
+
+        let fields = HydrantFields {
+            name: Some("Eiffel 65".to_string()),
+            url: Some("https://example.com/blue".to_string()),
+            active: Some(false),
+            tag_ids: Some(vec![blue.id]),
+        };
+
+        let updated = update_hydrant(&mut conn, &user, &hydrant.hydrant, fields)
+            .await
+            .unwrap();
+
+        let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+            .await
+            .unwrap();
+        assert_eq!(updated, found);
+
+        assert_eq!(found.hydrant.name, "Eiffel 65".to_string());
+        assert_eq!(found.hydrant.url, "https://example.com/blue".to_string());
+        assert!(!found.hydrant.active);
+
+        let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
+        assert_eq!(tag_names, vec!["Blue"]);
+    }
+
+    #[tokio::test]
+    async fn list_hydrants_empty() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let found = list_hydrants(&mut conn, &user).await.unwrap();
+        assert_eq!(found, vec![]);
+    }
+
+    #[tokio::test]
+    async fn list_hydrants_custom() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+            .await
+            .unwrap();
+
+        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
+            .await
+            .unwrap();
+
+        let painted = create_hydrant(
+            &mut conn,
+            &user,
+            "Painted",
+            "https://example.com/painted",
+            true,
+            &[red, blue.clone()],
+        )
+        .await
+        .unwrap();
+
+        let only_blue = create_hydrant(
+            &mut conn,
+            &user,
+            "Only Blue",
+            "https://example.com/blue",
+            true,
+            &[blue.clone()],
+        )
+        .await
+        .unwrap();
+
+        let found = list_hydrants(&mut conn, &user).await.unwrap();
+
+        let expected = vec![painted, only_blue];
+        assert_eq!(found, expected);
+    }
 }

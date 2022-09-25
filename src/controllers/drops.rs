@@ -8,6 +8,7 @@ use axum::{
 };
 use axum_extra::routing::TypedPath;
 use serde::Deserialize;
+use sqlx::Acquire;
 use uuid::Uuid;
 
 use crate::firehose;
@@ -165,9 +166,14 @@ pub async fn create(
     // If the title is an empty string, set it to null instead.
     let title = coerce_empty(form.title.clone());
 
+    let conn = match db.acquire().await {
+        Ok(conn) => conn,
+        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+    };
+
     let drop = firehose::create_drop(
-        &mut db,
-        session.user.clone(),
+        conn,
+        &session.user,
         title,
         form.url.clone(),
         Some(tag_selectors(&form.tags)),
@@ -284,7 +290,7 @@ pub async fn update(
     };
     let tags = tag_selectors(&form.tags);
 
-    let drop = firehose::update_drop(&mut db, session.user.clone(), drop, fields, Some(tags)).await;
+    let drop = firehose::update_drop(&mut db, &session.user, &drop.drop, fields, Some(tags)).await;
     match drop {
         Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
         Err(err) => {
