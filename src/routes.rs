@@ -3,8 +3,6 @@ use axum_extra::routing::RouterExt;
 
 use crate::controllers;
 
-// TODO: Should update routes be PUT/PATCH?
-
 pub fn build() -> Router {
     use controllers::*;
 
