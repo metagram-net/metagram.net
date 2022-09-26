@@ -1353,7 +1353,7 @@ mod tests {
                 None,
                 format!("https://example.com/filtering/{}", i),
                 None,
-                now,
+                now + chrono::Duration::seconds(i.try_into().unwrap()),
             )
             .await
             .unwrap();
@@ -1387,6 +1387,12 @@ mod tests {
         let user = test_user(&mut conn).await.unwrap();
         let now = chrono::Utc::now();
 
+        // Set up state that looks like this:
+        //
+        // D0: {T0}
+        // D1: {T0, T1}
+        // D2: {T0, T1, T2}
+
         let mut tags = Vec::new();
         for i in 0..3 {
             let tag = create_tag(&mut conn, &user, &i.to_string(), models::Tag::DEFAULT_COLOR)
@@ -1398,7 +1404,7 @@ mod tests {
 
         let mut drops = Vec::new();
         for i in 0..3 {
-            let sel = tags[0..i]
+            let sel = tags[0..i + 1]
                 .iter()
                 .cloned()
                 .map(|tag| TagSelector::Find { id: tag.id })
@@ -1410,16 +1416,22 @@ mod tests {
                 None,
                 format!("https://example.com/filtering/{}", i),
                 Some(sel),
-                now,
+                now + chrono::Duration::seconds(i.try_into().unwrap()),
             )
             .await
             .unwrap();
 
+            assert_eq!(drop.tags.len(), i + 1);
+
             drops.push(drop);
         }
 
+        // Each tag selects suffix slices from the drops:
+        //
+        // T0: {D0, D1, D2}
+        // T1: {    D1, D2}
+        // T2: {        D2}
         for i in 0..3 {
-            dbg!(i);
             let found = list_drops(
                 &mut conn,
                 &user,
@@ -1431,7 +1443,9 @@ mod tests {
             .await
             .unwrap();
 
-            let expected = &drops[(3 - i)..];
+            assert_eq!(found.len(), 3 - i);
+
+            let expected = &drops[i..];
             assert_eq!(found, expected);
         }
     }
