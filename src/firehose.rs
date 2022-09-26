@@ -894,10 +894,120 @@ pub async fn update_stream(
     .await
 }
 
+struct Story {
+    title: Option<String>,
+    url: String,
+}
+
+fn extract_stories(
+    channel: rss::Channel,
+    now: chrono::DateTime<chrono::Utc>,
+    last_fetched: Option<Timestamp>,
+) -> Vec<Story> {
+    channel
+        .items
+        .into_iter()
+        .filter_map(|item| {
+            let title = item.title;
+
+            // The `link` field is optional in RSS, but Firehose doesn't make sense without one.
+            let url = item.link?;
+            // All dates are optional, so assume that anything without a publish date is new. The
+            // URL itself is our last chance to de-dupe, and if that doesn't catch it, maybe it's
+            // truly new content.  ¯\_(ツ)_/¯
+            let published_at = item
+                .pub_date
+                .as_ref()
+                .and_then(|s| chrono::DateTime::parse_from_rfc2822(s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or(now);
+
+            if let Some(fetched_at) = last_fetched {
+                if published_at.naive_utc() < fetched_at {
+                    // We've (probably) already imported this item.
+                    return None;
+                }
+            }
+
+            Some(Story { title, url })
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hydrant {
     pub hydrant: models::Hydrant,
     pub tags: Vec<models::Tag>,
+}
+
+impl Hydrant {
+    pub async fn fetch(
+        conn: &mut PgConnection,
+        client: &reqwest::Client,
+        id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<()> {
+        let mut tx = conn.begin().await?;
+
+        // Take a lock on the row to prevent parallel fetches.
+        //
+        // TODO: Could this be a `for no key update`?
+        let hydrant = sqlx::query_as!(
+            models::Hydrant,
+            "
+            select *
+            from hydrants
+            where id = $1
+            for update
+            ",
+            id,
+        )
+        .fetch_one(&mut tx)
+        .await?;
+
+        let content = client
+            .request(http::Method::GET, &hydrant.url)
+            .send()
+            .await?
+            .bytes()
+            .await?;
+        let channel = rss::Channel::read_from(&content[..])?;
+
+        let user = crate::auth::find_user(&mut tx, hydrant.user_id).await?;
+
+        let stories = extract_stories(channel, now, hydrant.fetched_at);
+
+        let tag_selectors: Vec<TagSelector> = hydrant
+            .tag_ids
+            .iter()
+            .cloned()
+            .map(|id| TagSelector::Find { id })
+            .collect();
+
+        for story in stories {
+            // TODO: Set hydrant_id
+            create_drop(
+                &mut tx,
+                &user,
+                story.title,
+                story.url,
+                Some(tag_selectors.clone()),
+                now,
+            )
+            .await?;
+        }
+
+        sqlx::query!(
+            "update hydrants set fetched_at = $1 where id = $2",
+            now.naive_utc(),
+            hydrant.id,
+        )
+        .execute(&mut tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
 }
 
 impl Hydrant {
@@ -1023,11 +1133,22 @@ pub async fn list_hydrants(
     conn: impl PgExecutor<'_>,
     user: &models::User,
 ) -> anyhow::Result<Vec<Hydrant>> {
-    let user = user.clone();
-
     let mut query = JoinHydrantsTagsRow::select();
     query.push(" where hydrants.user_id = ");
     query.push_bind(user.id);
+
+    let rows: Vec<JoinHydrantsTagsRow> = query.build_query_as().fetch_all(conn).await?;
+    Ok(Hydrant::from_rows_vec(rows))
+}
+
+pub async fn stale_hydrants(
+    conn: &mut PgConnection,
+    now: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<Vec<Hydrant>> {
+    let mut query = JoinHydrantsTagsRow::select();
+    query.push("where hydrants.fetched_at is null ");
+    query.push(" or hydrants.fetched_at < ");
+    query.push_bind(now.naive_utc());
 
     let rows: Vec<JoinHydrantsTagsRow> = query.build_query_as().fetch_all(conn).await?;
     Ok(Hydrant::from_rows_vec(rows))
@@ -1055,7 +1176,7 @@ pub async fn create_hydrant(
     user: &models::User,
     name: &str,
     url: &str,
-    active: bool,
+    active: bool, // TODO: Enum?
     tags: Option<Vec<TagSelector>>,
 ) -> sqlx::Result<Hydrant> {
     let user = user.clone();
@@ -1209,14 +1330,16 @@ mod tests {
     // TODO: Make this a test transaction and roll it back on pass.
     async fn test_conn() -> sqlx::Result<PgConnection> {
         let url = std::env::var("TEST_DATABASE_URL").unwrap();
-
         PgConnection::connect(&url).await
     }
 
     async fn test_user(conn: &mut PgConnection) -> sqlx::Result<models::User> {
         let stytch_user_id: String = uuid::Uuid::new_v4().to_string();
-
         auth::create_user(conn, stytch_user_id).await
+    }
+
+    fn lorem_rss() -> anyhow::Result<url::Url> {
+        Ok(std::env::var("LOREM_RSS_URL")?.parse()?)
     }
 
     #[tokio::test]
@@ -1805,5 +1928,141 @@ mod tests {
 
         let expected = vec![painted, only_blue];
         assert_eq!(found, expected);
+    }
+
+    #[tokio::test]
+    async fn fetch_empty_rss() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let mut url = lorem_rss().unwrap();
+        url = url.join("feed").unwrap();
+        url.set_query(Some("length=0"));
+
+        let now = chrono::Utc::now();
+        let client = reqwest::Client::new();
+
+        let hydrant = create_hydrant(&mut conn, &user, "Empty", url.as_ref(), true, None)
+            .await
+            .unwrap();
+
+        Hydrant::fetch(&mut conn, &client, hydrant.hydrant.id, now)
+            .await
+            .unwrap();
+
+        let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+            .await
+            .unwrap();
+
+        // DB timestamps have microsecond precision, so truncate the local timestamp to the same
+        // number of subsecond digits (6).
+        assert_eq!(
+            found.hydrant.fetched_at,
+            Some(now.naive_utc().trunc_subsecs(6))
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_small_rss() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        let mut url = lorem_rss().unwrap();
+        url = url.join("feed").unwrap();
+        url.set_query(Some("length=10"));
+
+        let now = chrono::Utc::now();
+
+        let client = reqwest::Client::new();
+
+        let hydrant = create_hydrant(
+            &mut conn,
+            &user,
+            "10 items/minute",
+            url.as_ref(),
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+
+        Hydrant::fetch(&mut conn, &client, hydrant.hydrant.id, now)
+            .await
+            .unwrap();
+
+        let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+            .await
+            .unwrap();
+
+        // DB timestamps have microsecond precision, so truncate the local timestamp to the same
+        // number of subsecond digits (6).
+        assert_eq!(
+            found.hydrant.fetched_at,
+            Some(now.naive_utc().trunc_subsecs(6))
+        );
+
+        let drops = list_drops(
+            &mut conn,
+            &user,
+            DropFilters {
+                status: Some(DropStatus::Unread),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(drops.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_seen_items() {
+        let mut conn = test_conn().await.unwrap();
+        let user = test_user(&mut conn).await.unwrap();
+
+        // Pick a long interval (once per month) to make finding a new item less likely.
+        let mut url = lorem_rss().unwrap();
+        url = url.join("feed").unwrap();
+        url.set_query(Some("unit=month&length=5"));
+
+        let now = chrono::Utc::now();
+
+        let client = reqwest::Client::new();
+
+        let hydrant = create_hydrant(&mut conn, &user, "5 items/month", url.as_ref(), true, None)
+            .await
+            .unwrap();
+
+        for _ in 0..2 {
+            let now = now + chrono::Duration::minutes(1);
+
+            Hydrant::fetch(&mut conn, &client, hydrant.hydrant.id, now)
+                .await
+                .unwrap();
+
+            let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+                .await
+                .unwrap();
+
+            // DB timestamps have microsecond precision, so truncate the local timestamp to the same
+            // number of subsecond digits (6).
+            assert_eq!(
+                found.hydrant.fetched_at,
+                Some(now.naive_utc().trunc_subsecs(6))
+            );
+
+            let drops = list_drops(
+                &mut conn,
+                &user,
+                DropFilters {
+                    status: Some(DropStatus::Unread),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(drops.len(), 5);
+        }
     }
 }
