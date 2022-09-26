@@ -25,6 +25,7 @@ impl Cli {
 }
 
 const NUM_DROPS: u8 = 50;
+const NUM_HYDRANTS: u8 = 3;
 const NUM_STREAMS: u8 = 5;
 const NUM_TAGS: u8 = 10;
 
@@ -73,7 +74,19 @@ async fn seed(mut conn: PgConnection, cmd: Cli) -> anyhow::Result<()> {
         );
     }
 
-    // TODO(hydrants): seed hydrants without spamming real sites?
+    let hydrants = seed_hydrants(&mut conn, &mut rng, &user, &tags).await?;
+    for hydrant in &hydrants {
+        let tags = hydrant
+            .tags
+            .iter()
+            .map(|t| t.name.clone())
+            .collect::<Vec<String>>()
+            .join(" ");
+        println!(
+            "Created hydrant: {:?} {} {:?}",
+            hydrant.hydrant.name, hydrant.hydrant.url, tags,
+        );
+    }
 
     Ok(())
 }
@@ -158,6 +171,47 @@ async fn seed_drops(
     Ok(drops)
 }
 
+async fn seed_hydrants(
+    conn: &mut PgConnection,
+    rng: &mut StdRng,
+    user: &metagram::models::User,
+    all_tags: &Vec<firehose::Tag>,
+) -> anyhow::Result<Vec<firehose::Hydrant>> {
+    let monthly_feed_url = {
+        let base_url = url::Url::parse(&std::env::var("LOREM_RSS_URL").unwrap()).unwrap();
+        let mut url = base_url.join("feed").unwrap();
+        url.set_query(Some("interval=month"));
+        url
+    };
+
+    let mut hydrants = Vec::new();
+    for _ in 0..NUM_HYDRANTS {
+        let name: String = Title(1..3).fake_with_rng(rng);
+
+        let tag_count = rng.gen_range(0..3);
+        let tags: Vec<firehose::TagSelector> = rng
+            .sample_iter(Uniform::new(0, all_tags.len()))
+            .take(tag_count)
+            .map(|i| firehose::TagSelector::Find { id: all_tags[i].id })
+            .collect();
+
+        let active = rng.gen_bool(0.5);
+
+        let hydrant = firehose::create_hydrant(
+            &mut *conn,
+            user,
+            &name,
+            monthly_feed_url.as_ref(),
+            active,
+            Some(tags),
+        )
+        .await?;
+
+        hydrants.push(hydrant);
+    }
+    Ok(hydrants)
+}
+
 struct Title(std::ops::Range<usize>);
 
 struct Article {
@@ -176,6 +230,14 @@ impl Dummy<Title> for Article {
         let url = base_url.join(&words.join("-")).unwrap().to_string();
 
         Article { title, url }
+    }
+}
+
+impl Dummy<Title> for String {
+    fn dummy_with_rng<R: Rng + ?Sized>(t: &Title, rng: &mut R) -> String {
+        let words: Vec<String> = lorem::Words(t.0.clone()).fake_with_rng(rng);
+        let s = words.join(" ");
+        capitalize(s)
     }
 }
 

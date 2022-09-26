@@ -8,3 +8,7 @@ services:
       - "${PGPORT}:5432"
     volumes:
       - ./docker/dev-postgres/initdb.d:/docker-entrypoint-initdb.d
+  rss:
+    image: evdb/lorem-rss@sha256:39b550fb45f4780bb651c2352754c4654d261dfcf2a8e63f96b0a91dcbe6cc0b
+    ports:
+      - "${LOREM_RSS_PORT}:5000"
