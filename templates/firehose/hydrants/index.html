@@ -3,16 +3,9 @@
 {% block main %}
   <h1>Hydrants</h1>
 
-  {# TODO: big cards with url and tag badges inside, deemphasize inactive #}
-  <ul class="list-bulleted">
+  <ul class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 my-4 items-stretch">
     {% for hydrant in hydrants %}
-      <li>
-        <a href="{{ crate::controllers::hydrants::Member::path(hydrant.hydrant.id) }}">
-          {{ hydrant.hydrant.name }}
-        </a>
-
-        (<a href="{{ crate::controllers::hydrants::Edit::path(hydrant.hydrant.id) }}">edit</a>)
-      </li>
+      <li class="contents">{% include "_card.html" %}</li>
     {% endfor %}
   </ul>
 

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use askama::Template;
 use axum::{
     extract::Form,
@@ -5,7 +7,7 @@ use axum::{
 };
 use axum_extra::routing::TypedPath;
 use http::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use uuid::Uuid;
 
 use crate::firehose;
@@ -84,10 +86,21 @@ pub async fn index(
 pub struct HydrantForm {
     name: String,
     url: String,
+    #[serde(default, deserialize_with = "checkbox")]
     active: bool,
-    tags: Vec<String>, // TODO: allow creation here? yeah, probably
+    tags: HashSet<String>,
 
     errors: Option<Vec<String>>,
+}
+
+fn checkbox<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match String::deserialize(deserializer)?.as_ref() {
+        "on" => Ok(true),
+        _ => Ok(false),
+    }
 }
 
 // TODO: I bet this can be derived
@@ -136,7 +149,10 @@ pub async fn new(
     Ok(NewHydrant {
         context,
         user: Some(session.user),
-        hydrant: Default::default(),
+        hydrant: HydrantForm {
+            active: true,
+            ..Default::default()
+        },
         tag_options: tag_options(tags),
     })
 }
@@ -154,29 +170,13 @@ pub async fn create(
     };
     form.errors = errors;
 
-    let tag_ids: Vec<Uuid> = form
-        .tags
-        .iter()
-        .filter_map(|s| Uuid::parse_str(s).ok())
-        .collect();
-
-    if tag_ids.len() != form.tags.len() {
-        tracing::warn!({ ?form.tags }, "Some tags could not be found");
-        // TODO: this should re-render the form
-    }
-
-    let tags = match firehose::find_tags(&mut db, &session.user, &tag_ids).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
-
     let hydrant = firehose::create_hydrant(
         &mut db,
         &session.user,
         &form.name,
         &form.url,
         form.active,
-        &tags,
+        Some(tag_selectors(&form.tags)),
     )
     .await;
     match hydrant {
@@ -254,7 +254,9 @@ pub async fn edit(
         Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
     };
 
-    let tags = match firehose::list_tags(&mut db, &session.user).await {
+    let selected_tags: HashSet<String> = hydrant.tags.iter().map(|t| t.id.to_string()).collect();
+
+    let all_tags = match firehose::list_tags(&mut db, &session.user).await {
         Ok(tags) => tags,
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
@@ -268,14 +270,9 @@ pub async fn edit(
             name: hydrant.hydrant.name,
             url: hydrant.hydrant.url,
             active: hydrant.hydrant.active,
-            tags: hydrant
-                .tags
-                .iter()
-                .cloned()
-                .map(|t| t.id.to_string())
-                .collect(),
+            tags: selected_tags,
         },
-        tag_options: tag_options(tags),
+        tag_options: tag_options(all_tags),
     })
 }
 
@@ -291,27 +288,13 @@ pub async fn update(
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
-    let tag_ids: Vec<Uuid> = form
-        .tags
-        .iter()
-        .filter_map(|s| Uuid::parse_str(s).ok())
-        .collect();
-
-    if tag_ids.len() != form.tags.len() {
-        tracing::warn!({ ?form.tags }, "Some tags could not be found");
-        // TODO: this should re-render the form
-    }
-
-    let tags = match firehose::find_tags(&mut db, &session.user, &tag_ids).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    let tags = tag_selectors(&form.tags);
 
     let fields = firehose::HydrantFields {
         name: Some(form.name.clone()),
         url: Some(form.url.clone()),
         active: Some(form.active),
-        tag_ids: Some(tags.iter().map(|t| t.id).collect()),
+        tags: Some(tags),
     };
 
     match firehose::update_hydrant(&mut db, &session.user, &hydrant.hydrant, fields).await {
@@ -339,4 +322,54 @@ pub async fn update(
             .into_response())
         }
     }
+}
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/firehose/hydrants/:id/delete")]
+pub struct Delete {
+    id: Uuid,
+}
+
+impl Delete {
+    pub fn path(id: &Uuid) -> String {
+        Self { id: *id }.to_string()
+    }
+}
+
+pub async fn delete(
+    Delete { id }: Delete,
+    context: Context,
+    session: Session,
+    PgConn(mut db): PgConn,
+) -> Result<Redirect, Response> {
+    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
+        Ok(hydrant) => hydrant,
+        Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
+    };
+
+    match firehose::delete_hydrant(&mut db, &session.user, hydrant.hydrant).await {
+        Ok(_) => Ok(Redirect::to(&Collection.to_string())),
+        Err(err) => Err(context.error(Some(session), err.into()).into_response()),
+    }
+}
+
+// TODO: Third copy, extract it.
+fn tag_selectors(opts: &HashSet<String>) -> Vec<firehose::TagSelector> {
+    opts.iter()
+        // Keep this prefix synced with the select2 options.
+        .filter_map(|value| match value.strip_prefix('_') {
+            Some(name) => Some(firehose::TagSelector::Create {
+                name: name.to_string(),
+                color: firehose::Tag::DEFAULT_COLOR.to_string(),
+            }),
+            None => match Uuid::parse_str(value) {
+                Ok(id) => Some(firehose::TagSelector::Find { id }),
+                Err(_) => {
+                    // Well this is weird. There's probably a bug somewhere!
+                    tracing::error!( { ?value }, "Could not interpret tag selector" );
+                    None
+                }
+            },
+        })
+        .collect()
 }

@@ -30,6 +30,7 @@ pub fn build() -> Router {
         .typed_get(hydrants::show)
         .typed_get(hydrants::edit)
         .typed_post(hydrants::update)
+        .typed_post(hydrants::delete)
         .typed_get(streams::index)
         .typed_get(streams::new)
         .typed_post(streams::create)

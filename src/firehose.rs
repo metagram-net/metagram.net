@@ -1056,31 +1056,40 @@ pub async fn create_hydrant(
     name: &str,
     url: &str,
     active: bool,
-    tags: &[models::Tag],
+    tags: Option<Vec<TagSelector>>,
 ) -> sqlx::Result<Hydrant> {
     let user = user.clone();
-    let tag_ids: Vec<Uuid> = tags.iter().map(|t| t.id).collect();
-
-    let query = sqlx::query_as!(
-        models::Hydrant,
-        "
-        insert into hydrants
-        (user_id, name, url, active, tag_ids)
-        values
-        ($1, $2, $3, $4, $5)
-        returning *
-        ",
-        user.id,
-        name,
-        url,
-        active,
-        &tag_ids,
-    );
+    let name = name.to_string();
+    let url = url.to_string();
 
     conn.transaction(|tx| {
         Box::pin(async move {
+            let selectors = tags;
+            let mut tags = Vec::new();
+            let mut tag_ids = Vec::new();
+            for sel in selectors.unwrap_or_default() {
+                let tag = find_or_create_tag(&mut *tx, &user, sel).await?;
+                tag_ids.push(tag.id);
+                tags.push(tag);
+            }
+
+            let query = sqlx::query_as!(
+                models::Hydrant,
+                "
+                insert into hydrants
+                (user_id, name, url, active, tag_ids)
+                values
+                ($1, $2, $3, $4, $5)
+                returning *
+                ",
+                user.id,
+                name,
+                url,
+                active,
+                &tag_ids,
+            );
+
             let hydrant = query.fetch_one(&mut *tx).await?;
-            let tags = find_tags(&mut *tx, &user, &hydrant.tag_ids).await?;
             Ok(Hydrant { hydrant, tags })
         })
     })
@@ -1093,7 +1102,7 @@ pub struct HydrantFields {
     pub name: Option<String>,
     pub url: Option<String>,
     pub active: Option<bool>,
-    pub tag_ids: Option<Vec<Uuid>>,
+    pub tags: Option<Vec<TagSelector>>,
 }
 
 pub async fn update_hydrant(
@@ -1103,7 +1112,7 @@ pub async fn update_hydrant(
     fields: HydrantFields,
 ) -> anyhow::Result<Hydrant> {
     let user = user.clone();
-    let hydrant_id = hydrant.id;
+    let hydrant = hydrant.clone();
 
     let mut query = QueryBuilder::new("update hydrants set");
 
@@ -1124,30 +1133,68 @@ pub async fn update_hydrant(
         assign.push_bind_unseparated(active);
         do_assign = true;
     }
-    if let Some(tag_ids) = fields.tag_ids {
-        assign.push(" tag_ids = ");
-        assign.push_bind_unseparated(tag_ids);
-        do_assign = true;
-    }
-
-    query.push(" where id = ");
-    query.push_bind(hydrant.id);
-    query.push(" and user_id = ");
-    query.push_bind(user.id);
-    query.push(" returning *");
 
     conn.transaction(|tx| {
         Box::pin(async move {
+            let tags = if let Some(selectors) = fields.tags {
+                let mut tags = Vec::new();
+                let mut tag_ids = Vec::new();
+                for sel in selectors {
+                    let tag = find_or_create_tag(&mut *tx, &user, sel).await?;
+                    tag_ids.push(tag.id);
+                    tags.push(tag);
+                }
+
+                // Lifetime issues with `query` and `assign` make it difficult to pass the builder
+                // state into the closure. If we're already doing an assignment, push an empty
+                // string onto the query to sync the separator state.
+                let mut assign = query.separated(" , ");
+                if do_assign {
+                    assign.push("");
+                }
+                assign.push(" tag_ids = ");
+                assign.push_bind_unseparated(tag_ids);
+                do_assign = true;
+
+                tags
+            } else {
+                find_tags(&mut *tx, &user, &hydrant.tag_ids).await?
+            };
+
+            query.push(" where id = ");
+            query.push_bind(hydrant.id);
+            query.push(" and user_id = ");
+            query.push_bind(user.id);
+            query.push(" returning *");
+
             if do_assign {
                 let hydrant: models::Hydrant = query.build_query_as().fetch_one(&mut *tx).await?;
-                let tags = find_tags(&mut *tx, &user, &hydrant.tag_ids).await?;
-
                 Ok(Hydrant { hydrant, tags })
             } else {
-                find_hydrant(&mut *tx, &user, hydrant_id).await
+                find_hydrant(&mut *tx, &user, hydrant.id).await
             }
         })
     })
+    .await
+}
+
+pub async fn delete_hydrant(
+    conn: impl PgExecutor<'_>,
+    user: &models::User,
+    hydrant: models::Hydrant,
+) -> sqlx::Result<models::Hydrant> {
+    sqlx::query_as!(
+        models::Hydrant,
+        "
+        delete from hydrants
+        where id = $1
+        and user_id = $2
+        returning *
+        ",
+        hydrant.id,
+        user.id,
+    )
+    .fetch_one(conn)
     .await
 }
 
@@ -1608,7 +1655,7 @@ mod tests {
             "Simple",
             "https://example.com/simple",
             true,
-            &[],
+            None,
         )
         .await
         .unwrap();
@@ -1633,17 +1680,19 @@ mod tests {
             .await
             .unwrap();
 
-        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
-            .await
-            .unwrap();
-
         let created = create_hydrant(
             &mut conn,
             &user,
             "Painted",
             "https://example.com/painted",
             true,
-            &vec![red, blue],
+            Some(vec![
+                TagSelector::Find { id: red.id },
+                TagSelector::Create {
+                    name: "Blue".to_string(),
+                    color: "#0000ff".to_string(),
+                },
+            ]),
         )
         .await
         .unwrap();
@@ -1672,7 +1721,7 @@ mod tests {
             "The Rolling Stones",
             "https://example.com/painted",
             true,
-            &[black],
+            Some(vec![TagSelector::Find { id: black.id }]),
         )
         .await
         .unwrap();
@@ -1685,7 +1734,7 @@ mod tests {
             name: Some("Eiffel 65".to_string()),
             url: Some("https://example.com/blue".to_string()),
             active: Some(false),
-            tag_ids: Some(vec![blue.id]),
+            tags: Some(vec![TagSelector::Find { id: blue.id }]),
         };
 
         let updated = update_hydrant(&mut conn, &user, &hydrant.hydrant, fields)
@@ -1733,7 +1782,10 @@ mod tests {
             "Painted",
             "https://example.com/painted",
             true,
-            &[red, blue.clone()],
+            Some(vec![
+                TagSelector::Find { id: red.id },
+                TagSelector::Find { id: blue.id },
+            ]),
         )
         .await
         .unwrap();
@@ -1744,7 +1796,7 @@ mod tests {
             "Only Blue",
             "https://example.com/blue",
             true,
-            &[blue.clone()],
+            Some(vec![TagSelector::Find { id: blue.id }]),
         )
         .await
         .unwrap();

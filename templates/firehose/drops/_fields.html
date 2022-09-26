@@ -33,7 +33,7 @@
         data-color="{{tag.color}}"
         {% if drop.tags.contains(tag.id) %}selected{% endif %}
       >
-        "{{tag.name}}"
+        {{tag.name}}
       </option>
       {% endfor %}
     </select>

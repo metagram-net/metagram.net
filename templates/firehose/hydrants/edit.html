@@ -16,4 +16,13 @@
     <button type="submit" class="btn btn-gray">Save Hydrant</button>
   </div>
 </form>
+
+<div class="mt-4 pb-4 border-t border-gray-300 dark:border-gray-700"></div>
+
+<form
+  method="POST"
+  action="{{ crate::controllers::hydrants::Delete::path(id) }}"
+>
+  <button type="submit" class="btn btn-gray">Delete Hydrant</button>
+</form>
 {% endblock %}

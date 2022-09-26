@@ -28,28 +28,25 @@
   <div>
     <select class="w-full select-multiple" multiple>
       {% for tag in tag_options %}
-        <option
-          value="{{tag.id}}"
-          data-color="{{tag.color}}"
-          {% if hydrant.tags.contains(tag.id) %}selected{% endif %}
-        >
-          "{{tag.name}}"
-        </option>
+      <option
+        value="{{tag.id}}"
+        data-color="{{tag.color}}"
+        {% if hydrant.tags.contains(tag.id) %}selected{% endif %}
+      >
+        {{tag.name}}
+      </option>
       {% endfor %}
     </select>
   </div>
 </div>
 
 <div>
-  <label for="active">Active</label>
-  <div>
+  <label for="active">
+    Active
     <input
         type="checkbox"
         name="active"
-        class="w-full truncate"
-        value="{{ hydrant.active }}"
+        {% if hydrant.active %}checked{% endif %}
     />
-  </div>
+  </label>
 </div>
-
-{# TODO(hydrants): delete button #}
