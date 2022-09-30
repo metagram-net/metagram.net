@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use fang::asynk::async_worker_pool::AsyncWorkerPool;
+use fang::{AsyncQueue, AsyncQueueable, AsyncRunnable, NoTls};
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
@@ -86,6 +88,27 @@ async fn main() {
             })
         }
     };
+
+    let mut queue = AsyncQueue::builder()
+        .uri(&config.database_url)
+        .max_pool_size(1u32)
+        .build();
+
+    queue.connect(NoTls).await.unwrap();
+
+    let mut worker_pool: AsyncWorkerPool<AsyncQueue<NoTls>> = AsyncWorkerPool::builder()
+        .number_of_workers(1u32)
+        .queue(queue.clone())
+        .build();
+
+    worker_pool.start().await;
+
+    let task = metagram::jobs::Tick {};
+
+    queue
+        .schedule_task(&task as &dyn AsyncRunnable)
+        .await
+        .unwrap();
 
     let database_pool = PgPoolOptions::new()
         .connect(&config.database_url)

@@ -31,6 +31,7 @@ pub mod firehose;
 
 mod controllers;
 mod filters;
+pub mod jobs;
 mod routes;
 
 pub struct PgConn(sqlx::pool::PoolConnection<sqlx::Postgres>);

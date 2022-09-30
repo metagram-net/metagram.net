@@ -20,6 +20,7 @@ cookie = { version = "0.16.0", features = ["private"] }
 derivative = "2.2.0"
 envy = "0.4.2"
 fake = "2.5.0"
+fang = { version = "0.10.0", features = ["asynk"] }
 http = "0.2.8"
 hyper = "0.14.20"
 lazy_static = "1.4.0"
@@ -37,6 +38,7 @@ tower = "0.4.13"
 tower-http = { version = "0.3.4", features = ["trace", "request-id", "fs"] }
 tracing = "0.1.36"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter", "json"] }
+typetag = "0.2.3"
 url = "2.3.1"
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
