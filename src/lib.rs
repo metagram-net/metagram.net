@@ -10,8 +10,8 @@ use axum_csrf::{CsrfLayer, CsrfToken};
 use axum_extra::routing::SpaRouter;
 use derivative::Derivative;
 use sqlx::PgPool;
-use std::future::Future;
 use std::net::SocketAddr;
+use tokio::sync::watch;
 use tower::ServiceBuilder;
 use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
@@ -32,6 +32,7 @@ pub mod firehose;
 mod controllers;
 mod filters;
 pub mod jobs;
+pub mod queue;
 mod routes;
 
 pub struct PgConn(sqlx::pool::PoolConnection<sqlx::Postgres>);
@@ -122,12 +123,16 @@ impl Server {
     pub async fn run(
         self,
         addr: SocketAddr,
-        signal: impl Future<Output = ()>,
+        mut shutdown: watch::Receiver<bool>,
     ) -> hyper::Result<()> {
         tracing::info!("Listening on http://{}", addr);
         axum::Server::bind(&addr)
             .serve(self.router.into_make_service())
-            .with_graceful_shutdown(signal)
+            .with_graceful_shutdown(async {
+                // Either this is a legit shutdown signal or the sender disappeared. Either way,
+                // we're done!
+                let _ = shutdown.changed().await;
+            })
             .await
     }
 }

@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use fang::asynk::async_worker_pool::AsyncWorkerPool;
-use fang::{AsyncQueue, AsyncQueueable, AsyncRunnable, NoTls};
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::signal;
+use tokio::sync::watch;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -89,43 +89,38 @@ async fn main() {
         }
     };
 
-    let mut queue = AsyncQueue::builder()
-        .uri(&config.database_url)
-        .max_pool_size(1u32)
-        .build();
-
-    queue.connect(NoTls).await.unwrap();
-
-    let mut worker_pool: AsyncWorkerPool<AsyncQueue<NoTls>> = AsyncWorkerPool::builder()
-        .number_of_workers(1u32)
-        .queue(queue.clone())
-        .build();
-
-    worker_pool.start().await;
-
-    let task = metagram::jobs::Tick {};
-
-    queue
-        .schedule_task(&task as &dyn AsyncRunnable)
-        .await
-        .unwrap();
-
     let database_pool = PgPoolOptions::new()
         .connect(&config.database_url)
         .await
         .expect("database_pool");
 
+    let worker = metagram::queue::Worker::new(database_pool.clone(), Duration::from_secs(60));
+
     let srv = metagram::Server::new(metagram::ServerConfig {
         auth,
         base_url,
         cookie_key,
-        database_pool,
+        database_pool: database_pool.clone(),
     })
     .await
     .unwrap();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
-    srv.run(addr, shutdown_signal()).await.unwrap();
+
+    let (tx, rx) = watch::channel(false);
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        tx.send(true).unwrap();
+    });
+
+    let (web, work, cron) = tokio::join!(
+        srv.run(addr, rx.clone()),
+        worker.run(rx.clone()),
+        metagram::jobs::cron(database_pool, rx.clone()),
+    );
+    web.unwrap();
+    work.unwrap();
+    cron.unwrap();
 
     tracing::info!("Goodbye! ✌");
 }

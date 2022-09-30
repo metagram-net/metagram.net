@@ -20,7 +20,6 @@ cookie = { version = "0.16.0", features = ["private"] }
 derivative = "2.2.0"
 envy = "0.4.2"
 fake = "2.5.0"
-fang = { version = "0.10.0", features = ["asynk"] }
 http = "0.2.8"
 hyper = "0.14.20"
 lazy_static = "1.4.0"
@@ -31,7 +30,8 @@ regex = "1.6.0"
 reqwest = "0.11.12"
 rss = "2.0.1"
 serde = { version = "1.0.145", features = ["derive"] }
-sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid"] }
+serde_json = "1.0.85"
+sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "json"] }
 stytch = { git = "https://github.com/jdkaplan/stytch-rust" }
 tabwriter = "1.2.1"
 thiserror = "1.0.36"
