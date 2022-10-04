@@ -180,7 +180,7 @@ async fn seed_hydrants(
     let monthly_feed_url = {
         let base_url = url::Url::parse(&std::env::var("LOREM_RSS_URL").unwrap()).unwrap();
         let mut url = base_url.join("feed").unwrap();
-        url.set_query(Some("interval=month"));
+        url.set_query(Some("unit=month"));
         url
     };
 
