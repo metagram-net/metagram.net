@@ -11,6 +11,8 @@ use tokio::sync::watch;
 use tokio::task::JoinError;
 use uuid::Uuid;
 
+type PgTransaction<'tx> = sqlx::Transaction<'tx, sqlx::Postgres>;
+
 pub struct Worker {
     db: PgPool,
     interval: Duration,
@@ -23,33 +25,63 @@ impl Worker {
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) -> Result<(), JoinError> {
         let mut interval = tokio::time::interval(self.interval);
+        let mut found_job = true;
 
         tokio::spawn(async move {
             loop {
-                tracing::info!("Waiting for next job");
+                // If the queue was empty last time we polled it (or polling resulted in an error),
+                // wait a bit to avoid just constantly polling.
+                if !found_job {
+                    tracing::info!("Waiting before next poll");
+                    tokio::select! {
+                        _ = shutdown.changed() => break,
+                        _ = interval.tick() => (),
+                    }
+                }
 
-                tokio::select! {
+                found_job = false;
+
+                let mut tx = tokio::select! {
                     _ = shutdown.changed() => break,
-                    _ = interval.tick() => {
-                        match self.run_next_job().await {
-                            Ok(_) => (),
-                            Err(err) => tracing::error!({ ?err }, "Worker failed to run job"),
+                    res = self.db.begin() => match res {
+                        Ok(tx) => tx,
+                        Err(err) => {
+                            tracing::error!({ ?err }, "Failed to open transaction");
+                            continue;
                         }
-                    },
+                    }
+                };
+
+                let job = tokio::select! {
+                    _ = shutdown.changed() => break,
+                    res = claim_job(&mut *tx, chrono::Utc::now()) => match res {
+                        Ok(Some(job)) => job,
+                        Ok(None) => {
+                            tracing::info!("No jobs to run");
+                            continue;
+                        }
+                        Err(err) => {
+                            tracing::error!({ ?err }, "Failed to claim job");
+                            continue;
+                        }
+                    }
+                };
+
+                found_job = true;
+
+                // Don't select! with the shutdown signal here. Jobs should be relatively
+                // short-lived, so give this one a chance to complete before checking again.
+                match Self::run_next_job(tx, job).await {
+                    Ok(_) => (),
+                    Err(err) => tracing::error!({ ?err }, "Worker failed to run job"),
                 }
             }
         })
         .await
     }
 
-    async fn run_next_job(&self) -> anyhow::Result<()> {
-        let mut tx = self.db.begin().await?;
-
-        let job = match claim_job(&mut *tx, chrono::Utc::now()).await? {
-            Some(job) => job,
-            None => return Ok(()),
-        };
-        tracing::info!({ ?job }, "Found runnable job");
+    async fn run_next_job(mut tx: PgTransaction<'_>, job: Job) -> anyhow::Result<()> {
+        tracing::info!({ ?job }, "Running job");
 
         let task: Box<dyn Task> = serde_json::from_value(job.params.clone())?;
         let mut ctx = Context { tx: &mut *tx };
