@@ -16,12 +16,12 @@ if (process.argv[2] === "watch") {
 
 esbuild
   .build({
-    entryPoints: ["js/app.ts"],
+    entryPoints: ["js/app.ts", "js/firehose.ts"],
     bundle: true,
     sourcemap: true,
     target: "es6",
     plugins: [sassPlugin()],
-    outfile: "dist/js/app.js",
+    outdir: "dist/js",
     watch,
   })
   .then(() => {

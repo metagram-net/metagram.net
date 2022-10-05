@@ -17,6 +17,8 @@ pub fn build() -> Router {
         .typed_head(auth::authenticate_head)
         .typed_get(firehose::index)
         .typed_get(firehose::about)
+        .typed_get(firehose::manifest)
+        .typed_get(firehose::service_worker)
         .typed_get(drops::index)
         .typed_get(drops::new)
         .typed_post(drops::create)

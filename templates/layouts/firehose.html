@@ -15,8 +15,9 @@
     <link rel="stylesheet" href="/dist/css/index.css" />
 
     <script type="text/javascript" src="/dist/js/app.js" defer></script>
+    <script type="text/javascript" src="/dist/js/firehose.js" defer></script>
 
-    {# TODO(pwa): manifest #}
+    <link rel="manifest" href="{{ crate::controllers::firehose::Manifest.to_string() }}" />
 
     {% block head %}{% endblock %}
   </head>
