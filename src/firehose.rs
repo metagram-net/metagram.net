@@ -74,6 +74,7 @@ struct JoinDropsTagsRow {
     drop_url: String,
     drop_status: DropStatus,
     drop_moved_at: Timestamp,
+    drop_hydrant_id: Option<Uuid>,
     drop_created_at: Timestamp,
     drop_updated_at: Timestamp,
 
@@ -97,6 +98,7 @@ impl JoinDropsTagsRow {
             , drops.url        as drop_url
             , drops.status     as drop_status
             , drops.moved_at   as drop_moved_at
+            , drops.hydrant_id as drop_hydrant_id
             , drops.created_at as drop_created_at
             , drops.updated_at as drop_updated_at
 
@@ -113,6 +115,7 @@ impl JoinDropsTagsRow {
             ",
         )
     }
+
     fn drop(&self) -> models::Drop {
         models::Drop {
             id: self.drop_id,
@@ -121,6 +124,7 @@ impl JoinDropsTagsRow {
             url: self.drop_url.clone(),
             status: self.drop_status,
             moved_at: self.drop_moved_at,
+            hydrant_id: self.drop_hydrant_id,
             created_at: self.drop_created_at,
             updated_at: self.drop_updated_at,
         }
@@ -181,6 +185,7 @@ pub async fn list_drops(
           , drops.url as drop_url
           , drops.status as drop_status
           , drops.moved_at as drop_moved_at
+          , drops.hydrant_id as drop_hydrant_id
           , drops.created_at as drop_created_at
           , drops.updated_at as drop_updated_at
           , tags.id as tag_id
@@ -255,11 +260,13 @@ async fn load_drop_tags(
     .await
 }
 
+// TODO: This function signature is _awful_. Fix it.
 pub async fn create_drop(
     conn: &mut PgConnection,
     user: &models::User,
     title: Option<String>,
     url: String,
+    hydrant_id: Option<Uuid>,
     tags: Option<Vec<TagSelector>>,
     now: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<Drop> {
@@ -270,9 +277,9 @@ pub async fn create_drop(
             let drop: models::Drop = sqlx::query_as(
                 "
                 insert into drops
-                (user_id, title, url, status, moved_at)
+                (user_id, title, url, status, moved_at, hydrant_id)
                 values
-                ($1, $2, $3, $4::drop_status, $5)
+                ($1, $2, $3, $4::drop_status, $5, $6)
                 returning *
                 ",
             )
@@ -281,6 +288,7 @@ pub async fn create_drop(
             .bind(url)
             .bind(DropStatus::Unread)
             .bind(now.naive_utc())
+            .bind(hydrant_id)
             .fetch_one(&mut *tx)
             .await?;
 
@@ -985,12 +993,12 @@ impl Hydrant {
             .collect();
 
         for story in stories {
-            // TODO: Set hydrant_id
             create_drop(
                 &mut tx,
                 &user,
                 story.title,
                 story.url,
+                Some(hydrant.id),
                 Some(tag_selectors.clone()),
                 now,
             )
@@ -1353,6 +1361,7 @@ mod tests {
             None,
             "https://example.com/lorem-ipsum".to_string(),
             None,
+            None,
             chrono::Utc::now(),
         )
         .await
@@ -1376,6 +1385,7 @@ mod tests {
             &user,
             Some("Lorem Ipsum".to_string()),
             "https://example.com/lorem-ipsum".to_string(),
+            None,
             Some(vec![
                 TagSelector::Find { id: coffee.id },
                 TagSelector::Create {
@@ -1405,6 +1415,7 @@ mod tests {
             &user,
             None,
             "https://example.com/lorem-ipsum".to_string(),
+            None,
             None,
             chrono::Utc::now(),
         )
@@ -1442,6 +1453,7 @@ mod tests {
             &user,
             None,
             "https://example.com/lorem-ipsum".to_string(),
+            None,
             Some(vec![TagSelector::Find { id: coffee.id }]),
             chrono::Utc::now(),
         )
@@ -1478,6 +1490,7 @@ mod tests {
             &user,
             None,
             "https://example.com/lorem-ipsum".to_string(),
+            None,
             None,
             now,
         )
@@ -1522,6 +1535,7 @@ mod tests {
                 &user,
                 None,
                 format!("https://example.com/filtering/{}", i),
+                None,
                 None,
                 now + chrono::Duration::seconds(i.try_into().unwrap()),
             )
@@ -1585,6 +1599,7 @@ mod tests {
                 &user,
                 None,
                 format!("https://example.com/filtering/{}", i),
+                None,
                 Some(sel),
                 now + chrono::Duration::seconds(i.try_into().unwrap()),
             )

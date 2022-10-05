@@ -176,6 +176,7 @@ pub async fn create(
         &session.user,
         title,
         form.url.clone(),
+        None,
         Some(tag_selectors(&form.tags)),
         now,
     )

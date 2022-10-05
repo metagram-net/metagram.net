@@ -158,6 +158,7 @@ async fn seed_drops(
             user,
             title,
             article.url,
+            None,
             Some(tags),
             chrono::Utc::now(),
         )

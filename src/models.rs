@@ -53,7 +53,7 @@ pub struct Drop {
     pub url: String,
     pub status: DropStatus,
     pub moved_at: Timestamp,
-    // TODO: pub hydrant_id: Option<Uuid>,
+    pub hydrant_id: Option<Uuid>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
