@@ -149,8 +149,26 @@ pub async fn create(
         .collect();
 
     if tag_ids.len() != form.tags.len() {
-        tracing::warn!({ ?form.tags }, "Some tags could not be found");
-        // TODO: this should re-render the form
+        tracing::warn!({ ?form.tags, ?tag_ids }, "Some tags could not be found");
+
+        form.errors = {
+            let mut errs = form.errors.unwrap_or_default();
+            errs.push("Error finding tags. Was one recently deleted?".to_string());
+            Some(errs)
+        };
+
+        let tags = match firehose::list_tags(&mut db, &session.user).await {
+            Ok(tags) => tags,
+            Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+        };
+
+        return Err(NewStream {
+            context,
+            user: Some(session.user),
+            stream: form,
+            tag_options: tag_options(tags),
+        }
+        .into_response());
     }
 
     let tags = match firehose::find_tags(&mut db, &session.user, &tag_ids).await {
@@ -289,8 +307,14 @@ pub async fn update(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-    Form(form): Form<StreamForm>,
+    Form(mut form): Form<StreamForm>,
 ) -> Result<Redirect, Response> {
+    let errors = match form.validate() {
+        Ok(_) => None,
+        Err(errors) => Some(errors),
+    };
+    form.errors = errors;
+
     let id = match Uuid::parse_str(&id) {
         Ok(id) => id,
         Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
@@ -308,8 +332,27 @@ pub async fn update(
         .collect();
 
     if tag_ids.len() != form.tags.len() {
-        tracing::warn!({ ?form.tags }, "Some tags could not be found");
-        // TODO: this should re-render the form
+        tracing::warn!({ ?form.tags, ?tag_ids }, "Some tags could not be found");
+
+        form.errors = {
+            let mut errs = form.errors.unwrap_or_default();
+            errs.push("Error finding tags. Was one recently deleted?".to_string());
+            Some(errs)
+        };
+
+        let tags = match firehose::list_tags(&mut db, &session.user).await {
+            Ok(tags) => tags,
+            Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
+        };
+
+        return Err(EditStream {
+            context,
+            user: Some(session.user),
+            id,
+            stream: form,
+            tag_options: tag_options(tags),
+        }
+        .into_response());
     }
 
     let tags = match firehose::find_tags(&mut db, &session.user, &tag_ids).await {
