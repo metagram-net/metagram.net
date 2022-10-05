@@ -2,11 +2,10 @@ use std::collections::HashSet;
 
 use askama::Template;
 use axum::{
-    extract::Form,
     response::{IntoResponse, Redirect, Response},
     Extension,
 };
-use axum_extra::routing::TypedPath;
+use axum_extra::{extract::Form, routing::TypedPath};
 use serde::Deserialize;
 use sqlx::Acquire;
 use uuid::Uuid;

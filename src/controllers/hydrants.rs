@@ -1,11 +1,8 @@
 use std::collections::HashSet;
 
 use askama::Template;
-use axum::{
-    extract::Form,
-    response::{IntoResponse, Redirect, Response},
-};
-use axum_extra::routing::TypedPath;
+use axum::response::{IntoResponse, Redirect, Response};
+use axum_extra::{extract::Form, routing::TypedPath};
 use http::StatusCode;
 use serde::{Deserialize, Deserializer};
 use uuid::Uuid;

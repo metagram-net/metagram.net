@@ -14,7 +14,7 @@
 <div>
   <label for="tags">Tags</label>
   <div>
-    <select class="w-full select-multiple" multiple>
+    <select name="tags" class="w-full select-multiple" multiple>
       {% for tag in tag_options %}
         <option
           value="{{tag.id}}"

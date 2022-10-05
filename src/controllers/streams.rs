@@ -1,8 +1,7 @@
 use askama::Template;
-use axum::extract::Form;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
-use axum_extra::routing::TypedPath;
+use axum_extra::{extract::Form, routing::TypedPath};
 use serde::Deserialize;
 use uuid::Uuid;
 
