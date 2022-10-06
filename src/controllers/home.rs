@@ -49,11 +49,16 @@ pub struct About;
 struct AboutPage {
     context: Context,
     user: Option<User>,
+
+    version: String,
+    source_url: String,
 }
 
 pub async fn about(_: About, context: Context, session: Option<Session>) -> impl IntoResponse {
     AboutPage {
         context,
         user: session.map(|s| s.user),
+        version: crate::VERSION.to_string(),
+        source_url: crate::SOURCE_URL.to_string(),
     }
 }
