@@ -59,3 +59,8 @@ args = [
     "--",
     "seed", "--stytch-user-id", "${STYTCH_USER_ID}",
 ]
+
+[tasks.deny]
+description = "Run cargo-deny checks"
+command = "cargo"
+args = ["deny", "check"]

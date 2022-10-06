@@ -1,0 +1,27 @@
+[advisories]
+ignore = [
+    # ansi_term is Unmaintained. tracing-subscriber uses it, but not for much
+    # longer.
+    "RUSTSEC-2021-0139",
+]
+
+[licenses]
+# Require extra-high confidence. Default was 0.8
+confidence-threshold = 0.93
+default = "deny"
+copyleft = "allow"
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "MIT",
+    "Unicode-DFS-2016",
+]
+
+[bans]
+wildcards = "warn"
+
+[sources]
+allow-git = [
+    "https://github.com/djc/askama.git",
+    "https://github.com/jdkaplan/stytch-rust.git",
+]
