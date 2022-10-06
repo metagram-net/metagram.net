@@ -7,8 +7,8 @@ default-run = "server"
 [dependencies]
 addr = "0.15.6"
 anyhow = "1.0.65"
-askama = { version = "0.11.2", features = ["with-axum"] }
-askama_axum = "0.1.0"
+askama = { git = "https://github.com/djc/askama", features = [ "with-axum" ] } # version = 0.11.2
+askama_axum = { git = "https://github.com/djc/askama" } # version = 0.1.0
 async-trait = "0.1.57"
 axum = { version = "0.5.16", features = ["headers"] }
 axum-extra = { version = "0.3.7", features = ["cookie-private", "cookie", "typed-routing", "spa", "form"] }
@@ -43,10 +43,6 @@ tracing-subscriber = { version = "0.3.15", features = ["env-filter", "json"] }
 typetag = "0.2.3"
 url = "2.3.1"
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
-
-[patch.crates-io]
-askama = { git = 'https://github.com/djc/askama' }
-askama_axum = { git = 'https://github.com/djc/askama' }
 
 [dev-dependencies]
 axum-macros = "0.2.3"
