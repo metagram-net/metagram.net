@@ -62,3 +62,25 @@ pub async fn about(_: About, context: Context, session: Option<Session>) -> impl
         source_url: crate::SOURCE_URL.to_string(),
     }
 }
+
+#[derive(TypedPath, Deserialize)]
+#[typed_path("/licenses")]
+pub struct Licenses;
+
+#[derive(Template)]
+#[template(path = "home/licenses.html")]
+struct LicensesPage {
+    context: Context,
+    user: Option<User>,
+}
+
+pub async fn licenses(
+    _: Licenses,
+    context: Context,
+    session: Option<Session>,
+) -> impl IntoResponse {
+    LicensesPage {
+        context,
+        user: session.map(|s| s.user),
+    }
+}

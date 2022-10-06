@@ -3,9 +3,19 @@
 {% block main %}
 <h1>About</h1>
 
-<p>{{ version }}</p>
-
-<p>TODO: licenses</p>
+<p>Metagram is proudly built on top of free and open source software. Thank you
+to everyone who has contributed to the frameworks, libraries, tools, and
+everything else that makes it possible to create this.</p>
 
 <p>Check out the <a href="{{ source_url }}">source code</a>!</p>
+
+<p>Metagram is distributed under the terms of the
+<a href="https://www.gnu.org/licenses/agpl-3.0.txt">
+  AGPLv3
+</a>.
+<a href="{{ crate::controllers::home::Licenses.to_string() }}">
+  View all third-party licenses
+</a></p>
+
+<p><pre>{{ version }}</pre></p>
 {% endblock %}
