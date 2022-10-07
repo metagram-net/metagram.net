@@ -1,6 +1,15 @@
 # Metagram
 
-All the code for https://metagram.net
+All the code for [metagram.net](https://metagram.net)
+
+## What is this?
+
+Metagram is my web development playground. I someday dream of having a network
+of apps that are useful, interesting, or fun to work on.
+
+Right now, there's just [Firehose], a very opinionated personal content queue.
+
+[Firehose]: https://metagram.net/firehose
 
 ## Join me!
 
