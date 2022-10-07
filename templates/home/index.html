@@ -1,12 +1,10 @@
 {% extends "layouts/base.html" %}
 
 {% block main %}
-<h1>Firehose</h1>
-
 {% match user %}
 {% when Some(user) %}
-<p>Hello! Your user ID is <code>{{ user.id }}</code>.</p>
+  <p>Metagram exists... for you!</p>
 {% when None %}
-<p>Hello!</p>
+  <p>Metagram will exist eventually.</p>
 {% endmatch %}
 {% endblock %}
