@@ -1,14 +1,14 @@
-<div class="flex flex-row md:flex-col md:content-center justify-between md:justify-center border-2 rounded-lg p-3">
-  <a
-    href="{{ crate::controllers::hydrants::Member::path(hydrant.hydrant.id) }}"
-    class="text-2xl break-words no-underline"
-  >
+<a
+  href="{{ crate::controllers::hydrants::Member::path(hydrant.hydrant.id) }}"
+  class="text-2xl break-words no-underline"
+>
+  <div class="flex flex-row md:flex-col md:content-center justify-between md:justify-center border-2 rounded-lg p-3">
     {{ hydrant.hydrant.name }}
-  </a>
 
-  <span class="tags mb-2 space-x-2">
-    {% for tag in hydrant.tags %}
-      {% include "firehose/tags/_badge.html" %}
-    {% endfor %}
-  </span>
-</div>
+    <span class="tags mb-2 space-x-2">
+      {% for tag in hydrant.tags %}
+        {% include "firehose/tags/_badge_no_link.html" %}
+      {% endfor %}
+    </span>
+  </div>
+</a>
