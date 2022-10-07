@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, IntoResponseParts, Response, ResponseParts},
     Router,
 };
-use axum_csrf::{CsrfLayer, CsrfToken};
+use axum_csrf::{CsrfConfig, CsrfLayer, CsrfToken};
 use axum_extra::routing::SpaRouter;
 use derivative::Derivative;
 use sqlx::PgPool;
@@ -118,7 +118,14 @@ impl Server {
             //
             // TODO: Could this become CsrfLayer's job?
             .layer(axum::middleware::from_fn(auto_csrf_token))
-            .layer(CsrfLayer::build().key(config.cookie_key).finish());
+            .layer(CsrfLayer::new(
+                CsrfConfig::new()
+                    .with_cookie_path("/")
+                    .with_secure(true)
+                    .with_http_only(true)
+                    .with_cookie_same_site(cookie::SameSite::Strict)
+                    .with_key(Some(config.cookie_key)),
+            ));
 
         Ok(Self { router: app })
     }
