@@ -1,3 +1,4 @@
-/dist
+/dist/css
+/dist/js
 /target
 /templates/home/licenses.html
