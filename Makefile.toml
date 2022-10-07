@@ -1,5 +1,8 @@
 [tasks.dev]
 description = "Start dev services and run the app, watching for changes"
+run_task = { name = ["about", "watch"] }
+
+[tasks.watch]
 run_task = { name = ["services", "tailwind", "esbuild", "run"], parallel = true }
 
 [tasks.tailwind]
@@ -64,3 +67,12 @@ args = [
 description = "Run cargo-deny checks"
 command = "cargo"
 args = ["deny", "check"]
+
+[tasks.about]
+description = "Run cargo-about to generate license information"
+command = "cargo"
+args = [
+    "about", "generate",
+    "--output-file", "templates/home/licenses.html",
+    "templates/home/licenses.hbs",
+]
