@@ -76,3 +76,9 @@ args = [
     "--output-file", "templates/home/licenses.html",
     "templates/home/licenses.hbs",
 ]
+
+[tasks.sqlx]
+description = "Write sqlx offline build files"
+install_crate = "sqlx-cli"
+command = "cargo"
+args = ["sqlx", "prepare"]

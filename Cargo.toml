@@ -31,7 +31,7 @@ reqwest = "0.11.12"
 rss = "2.0.1"
 serde = { version = "1.0.145", features = ["derive"] }
 serde_json = "1.0.85"
-sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "json"] }
+sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "json", "offline"] }
 stytch = { git = "https://github.com/jdkaplan/stytch-rust" }
 thiserror = "1.0.36"
 tokio = { version = "1.21.1", features = ["full"] }
