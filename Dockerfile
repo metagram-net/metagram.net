@@ -44,8 +44,8 @@ COPY --from=bundle \
     /usr/local/src/metagram/dist \
     /usr/local/src/metagram/dist
 COPY --from=licenses \
-    /usr/local/src/metagram/templates/home/about.html \
-    /usr/local/src/metagram/templates/home/about.html
+    /usr/local/src/metagram/templates/home/licenses.html \
+    /usr/local/src/metagram/templates/home/licenses.html
 
 ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin server
