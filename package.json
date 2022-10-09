@@ -1,5 +1,10 @@
 {
   "name": "metagram-net",
+  "scripts": {
+    "build": "npm run build-css && npm run build-js",
+    "build-css": "tailwindcss --input css/index.css --output dist/css/index.css",
+    "build-js": "node build.mjs"
+  },
   "dependencies": {
     "jquery": "^3.6.0",
     "select2": "^4.0.13"
