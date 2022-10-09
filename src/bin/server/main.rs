@@ -64,7 +64,7 @@ async fn main() {
 
     let auth: metagram::Auth = {
         let stytch_config = stytch::Config {
-            env: config.stytch_env,
+            base_url: config.stytch_env.base_url().unwrap(),
             project_id: config.stytch_project_id,
             secret: config.stytch_secret,
         };
@@ -75,7 +75,7 @@ async fn main() {
             .expect("session duration should fit in u32");
 
         Arc::new(StytchAuth {
-            client: stytch_config.client().unwrap(),
+            client: stytch::reqwest::Client::new(stytch_config).unwrap(),
             base_url: base_url.clone(),
             session_duration_minutes: Some(minutes),
         })
@@ -143,7 +143,7 @@ async fn shutdown_signal() {
 
 #[derive(Debug, Clone)]
 struct StytchAuth {
-    client: stytch::Client,
+    client: stytch::reqwest::Client,
     base_url: url::Url,
     session_duration_minutes: Option<u32>,
 }
@@ -164,7 +164,7 @@ impl metagram::AuthN for StytchAuth {
             signup_magic_link_url: Some(url.to_string()),
             ..Default::default()
         };
-        req.send(self.client.clone()).await
+        self.client.send(req.build()).await
     }
 
     async fn authenticate_magic_link(
@@ -176,7 +176,7 @@ impl metagram::AuthN for StytchAuth {
             session_duration_minutes: self.session_duration_minutes,
             ..Default::default()
         };
-        req.send(self.client.clone()).await
+        self.client.send(req.build()).await
     }
 
     async fn authenticate_session(
@@ -188,7 +188,7 @@ impl metagram::AuthN for StytchAuth {
             session_duration_minutes: self.session_duration_minutes,
             ..Default::default()
         };
-        req.send(self.client.clone()).await
+        self.client.send(req.build()).await
     }
 
     async fn revoke_session(
@@ -199,6 +199,6 @@ impl metagram::AuthN for StytchAuth {
             session_token: Some(token),
             ..Default::default()
         };
-        req.send(self.client.clone()).await
+        self.client.send(req.build()).await
     }
 }
