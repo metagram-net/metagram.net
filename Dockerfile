@@ -49,5 +49,8 @@ RUN cargo build --release --bin server
 ###############################################################################
 # Make the runnable image
 ###############################################################################
-FROM debian:buster-slim
-COPY --from=build /usr/local/src/metagram/target/release/server /usr/local/bin/metagram-server
+FROM rust:1.63
+COPY --from=build \
+    /usr/local/src/metagram/target/release/server \
+    /usr/local/bin/metagram-server
+CMD [ "/usr/local/bin/metagram-server" ]
