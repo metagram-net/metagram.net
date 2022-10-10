@@ -1,6 +1,0 @@
-FROM rust:1.63
-
-ENV DRIFT_REV='b50fb4f5220eb39b1bc8ff7856eaf787c2ddaacd'
-RUN cargo install --git 'https://github.com/jdkaplan/drift' --rev "${DRIFT_REV}"
-
-CMD ["drift"]

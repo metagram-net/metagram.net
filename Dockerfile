@@ -54,7 +54,16 @@ RUN cargo build --release --bin server
 # Make the runnable image
 ###############################################################################
 FROM rust:1.63
+
+ENV DRIFT_REV='b50fb4f5220eb39b1bc8ff7856eaf787c2ddaacd'
+RUN cargo install --git 'https://github.com/jdkaplan/drift' --rev "${DRIFT_REV}"
+
+WORKDIR /usr/local/src/metagram
+
+COPY migrations/ migrations/
+
 COPY --from=build \
     /usr/local/src/metagram/target/release/server \
     /usr/local/bin/metagram-server
+
 CMD [ "/usr/local/bin/metagram-server" ]

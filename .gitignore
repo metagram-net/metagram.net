@@ -3,3 +3,4 @@ dist/js
 node_modules
 target
 templates/home/licenses.html
+tmp

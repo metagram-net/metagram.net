@@ -1,5 +1,10 @@
+.git
+fly.toml
 dist/css
 dist/js
+docker
 Dockerfile
 node_modules
 target
+templates/home/licenses.html
+tmp
