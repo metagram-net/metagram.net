@@ -40,9 +40,6 @@ FROM rust:1.63 as build
 WORKDIR /usr/local/src/metagram
 
 COPY . .
-COPY --from=bundle \
-    /usr/local/src/metagram/dist \
-    /usr/local/src/metagram/dist
 COPY --from=licenses \
     /usr/local/src/metagram/templates/home/licenses.html \
     /usr/local/src/metagram/templates/home/licenses.html
@@ -61,6 +58,10 @@ RUN cargo install --git 'https://github.com/jdkaplan/drift' --rev "${DRIFT_REV}"
 WORKDIR /usr/local/src/metagram
 
 COPY migrations/ migrations/
+
+COPY --from=bundle \
+    /usr/local/src/metagram/dist \
+    /usr/local/src/metagram/dist
 
 COPY --from=build \
     /usr/local/src/metagram/target/release/server \
