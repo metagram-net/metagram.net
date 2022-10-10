@@ -21,7 +21,7 @@ args = ["build.mjs", "watch"]
 [tasks.run]
 description = "Run the server"
 command = "cargo"
-args = ["run"]
+args = ["run", "--bin", "server"]
 watch = { watch = ["src", "templates", "Cargo.toml"] }
 
 [tasks.db-wait]
