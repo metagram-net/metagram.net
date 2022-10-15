@@ -35,7 +35,7 @@ pub mod jobs;
 pub mod queue;
 mod routes;
 
-const VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/version"));
+const BUILD_INFO: &str = include_str!(concat!(env!("OUT_DIR"), "/build_info"));
 const SOURCE_URL: &str = "https://github.com/metagram-net/metagram.net";
 
 pub struct PgConn(sqlx::pool::PoolConnection<sqlx::Postgres>);

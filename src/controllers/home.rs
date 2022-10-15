@@ -50,7 +50,8 @@ struct AboutPage {
     context: Context,
     user: Option<User>,
 
-    version: String,
+    crate_version: String,
+    build_info: String,
     source_url: String,
 }
 
@@ -58,7 +59,8 @@ pub async fn about(_: About, context: Context, session: Option<Session>) -> impl
     AboutPage {
         context,
         user: session.map(|s| s.user),
-        version: crate::VERSION.to_string(),
+        crate_version: format!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
+        build_info: crate::BUILD_INFO.to_string(),
         source_url: crate::SOURCE_URL.to_string(),
     }
 }

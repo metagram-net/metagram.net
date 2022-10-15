@@ -5,19 +5,17 @@ use std::process::Command;
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
-    let version_path = Path::new(&out_dir).join("version");
+    let build_info_path = Path::new(&out_dir).join("build_info");
     let cwd = env!("CARGO_MANIFEST_DIR");
 
-    let version_string = format!(
-        "{} {} ({}{}, {})",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
+    let build_info_string = format!(
+        "{} {}{}",
+        env::var("PROFILE").unwrap(),
         commit_hash(cwd),
         status_suffix(cwd),
-        env::var("PROFILE").unwrap(),
     );
 
-    fs::write(version_path, version_string).unwrap();
+    fs::write(build_info_path, build_info_string).unwrap();
 }
 
 fn commit_hash(cwd: &str) -> String {
@@ -26,7 +24,7 @@ fn commit_hash(cwd: &str) -> String {
         .arg("HEAD")
         .current_dir(cwd)
         .output()
-        .expect("Failed to execute command");
+        .unwrap();
 
     String::from_utf8(output.stdout)
         .expect("Failed to parse commit hash")
@@ -41,7 +39,7 @@ fn status_suffix(cwd: &str) -> &'static str {
         .arg("--exit-code")
         .current_dir(cwd)
         .status()
-        .expect("Failed to execute command");
+        .unwrap();
 
     if status.success() {
         ""
