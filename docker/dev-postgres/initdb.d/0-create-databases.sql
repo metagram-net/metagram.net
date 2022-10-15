@@ -1,2 +1,2 @@
-create database firehose_development;
-create database firehose_test;
+create database metagram_development;
+create database metagram_test;
