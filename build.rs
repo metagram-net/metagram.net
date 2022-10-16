@@ -8,23 +8,28 @@ fn main() {
 
     fs::write(out_dir.join("build_profile"), env::var("PROFILE").unwrap()).unwrap();
 
-    fs::write(
-        out_dir.join("commit_hash"),
-        commit_hash(env!("CARGO_MANIFEST_DIR")),
-    )
-    .unwrap();
+    let commit_hash = match git_hash(env!("CARGO_MANIFEST_DIR")) {
+        Some(hash) => hash,
+        None => env::var("METAGRAM_COMMIT_HASH").unwrap(),
+    };
+
+    fs::write(out_dir.join("commit_hash"), commit_hash).unwrap();
 }
 
-fn commit_hash(cwd: &str) -> String {
+fn git_hash(cwd: &str) -> Option<String> {
     let hash = {
         let output = Command::new("git")
             .arg("rev-parse")
             .arg("HEAD")
             .current_dir(cwd)
             .output()
-            .unwrap();
+            .ok()?;
 
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
+        if output.status.success() {
+            String::from_utf8(output.stdout).unwrap().trim().to_string()
+        } else {
+            return None;
+        }
     };
 
     let suffix = {
@@ -34,7 +39,7 @@ fn commit_hash(cwd: &str) -> String {
             .arg("--exit-code")
             .current_dir(cwd)
             .status()
-            .unwrap();
+            .ok()?;
 
         if status.success() {
             ""
@@ -43,5 +48,5 @@ fn commit_hash(cwd: &str) -> String {
         }
     };
 
-    hash + suffix
+    Some(hash + suffix)
 }

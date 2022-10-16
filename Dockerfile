@@ -45,6 +45,9 @@ COPY --from=licenses \
     /usr/local/src/metagram/templates/home/licenses.html
 
 ENV SQLX_OFFLINE=true
+
+ARG METAGRAM_COMMIT_HASH
+ENV METAGRAM_COMMIT_HASH="${METAGRAM_COMMIT_HASH:-development}"
 RUN cargo build --release --bin server
 
 ###############################################################################
