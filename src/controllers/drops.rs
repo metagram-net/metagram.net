@@ -2,12 +2,15 @@ use std::collections::HashSet;
 
 use askama::Template;
 use axum::{
+    extract::Query,
     headers::{Header, Referer},
     response::{IntoResponse, Redirect, Response},
     Extension, TypedHeader,
 };
 use axum_extra::{extract::Form, routing::TypedPath};
 use http::HeaderValue;
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::Deserialize;
 use sqlx::Acquire;
 use uuid::Uuid;
@@ -128,22 +131,76 @@ fn tag_selectors(opts: &HashSet<String>) -> Vec<firehose::TagSelector> {
         .collect()
 }
 
+#[derive(Default, Deserialize)]
+pub struct ShareQuery {
+    text: Option<String>,
+    title: Option<String>,
+    url: Option<String>,
+}
+
+impl ShareQuery {
+    fn form(&self) -> DropForm {
+        let mut text = match &self.text {
+            Some(text) => text.trim(),
+            None => "",
+        };
+        let mut title = match &self.title {
+            Some(title) => title.trim(),
+            None => "",
+        };
+        let mut url = match &self.url {
+            Some(url) => url.trim(),
+            None => "",
+        };
+
+        if url.is_empty() {
+            (text, url) = find_url(text);
+        }
+
+        if title.is_empty() {
+            title = text;
+        }
+
+        DropForm {
+            title: title.to_string(),
+            url: url.to_string(),
+            ..Default::default()
+        }
+    }
+}
+
+fn find_url(text: &str) -> (&str, &str) {
+    // This regex is adapted from https://bugs.chromium.org/p/chromium/issues/detail?id=789379
+    lazy_static! {
+        static ref RE_LAST_URL: Regex = Regex::new(r"^(.*?)\s*(https?://[^\s]+)$").unwrap();
+    }
+
+    if let Some(caps) = RE_LAST_URL.captures(text) {
+        (caps.get(1).unwrap().as_str(), caps.get(2).unwrap().as_str())
+    } else {
+        ("", "")
+    }
+}
+
 pub async fn new(
     _: New,
     Extension(base_url): Extension<BaseUrl>,
     PgConn(mut db): PgConn,
     context: Context,
     session: Session,
+    Query(query): Query<ShareQuery>,
 ) -> Result<impl IntoResponse, Response> {
     let tags = match firehose::list_tags(&mut db, &session.user).await {
         Ok(tags) => tags,
         Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
     };
 
+    let drop = query.form();
+
     Ok(NewDrop {
         context,
         user: Some(session.user),
-        drop: Default::default(),
+        drop,
         bookmarklet: bookmarklet(base_url.0),
         tag_options: tag_options(tags),
     })
@@ -402,12 +459,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bookmarklet_href() -> anyhow::Result<()> {
+    fn bookmarklet_href() {
         let expected = r#"javascript:(function(){location.href="https://example.net/firehose/drops/new?title="+encodeURIComponent(document.title)+"&url="+encodeURIComponent(document.URL);})();"#;
         assert_eq!(
             expected,
-            bookmarklet(url::Url::parse("https://example.net")?),
+            bookmarklet(url::Url::parse("https://example.net").unwrap()),
         );
-        Ok(())
+    }
+
+    #[test]
+    fn share_query_form() {
+        let form = ShareQuery::default().form();
+        assert_eq!("", form.title);
+        assert_eq!("", form.url);
+
+        let form = ShareQuery {
+            text: Some("https://example.com/sample".to_string()),
+            ..Default::default()
+        }
+        .form();
+        assert_eq!("", form.title);
+        assert_eq!("https://example.com/sample", form.url);
+
+        let form = ShareQuery {
+            text: Some("Shared from Twitter: https://example.com/sample".to_string()),
+            ..Default::default()
+        }
+        .form();
+        assert_eq!("Shared from Twitter:", form.title);
+        assert_eq!("https://example.com/sample", form.url);
+
+        let form = ShareQuery {
+            text: Some(r#"Watch "this video" on ..."#.to_string()),
+            url: Some("https://example.com/sample".to_string()),
+            ..Default::default()
+        }
+        .form();
+        assert_eq!("Watch \"this video\" on ...", form.title);
+        assert_eq!("https://example.com/sample", form.url);
+
+        let form = ShareQuery {
+            title: Some("Test Title".to_string()),
+            url: Some("https://example.com/sample".to_string()),
+            ..Default::default()
+        }
+        .form();
+        assert_eq!("Test Title", form.title);
+        assert_eq!("https://example.com/sample", form.url);
     }
 }
