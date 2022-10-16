@@ -26,7 +26,12 @@ RUN curl --location "https://github.com/EmbarkStudios/cargo-about/releases/downl
 
 WORKDIR /usr/local/src/metagram
 
-COPY . .
+# Copy in just enough to make `cargo metadata` work.
+COPY Cargo.toml Cargo.lock ./
+COPY src/bin src/bin
+
+COPY about.toml about.toml
+COPY templates/home/licenses.hbs templates/home/licenses.hbs
 
 RUN cargo about generate \
     --output-file templates/home/licenses.html \
