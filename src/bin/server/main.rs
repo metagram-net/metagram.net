@@ -13,9 +13,6 @@ struct Config {
     database_url: String,
     base_url: String,
 
-    #[serde(default)]
-    mock_auth: bool,
-
     #[serde(default, deserialize_with = "bool_from_string")]
     dev_logging: bool,
 
@@ -66,27 +63,22 @@ async fn main() {
     };
 
     let auth: metagram::Auth = {
-        if config.mock_auth {
-            tracing::warn!("Using the mock authentication provider");
-            Arc::new(mock_auth())
-        } else {
-            let stytch_config = stytch::Config {
-                env: config.stytch_env,
-                project_id: config.stytch_project_id,
-                secret: config.stytch_secret,
-            };
+        let stytch_config = stytch::Config {
+            env: config.stytch_env,
+            project_id: config.stytch_project_id,
+            secret: config.stytch_secret,
+        };
 
-            let minutes = chrono::Duration::days(30)
-                .num_minutes()
-                .try_into()
-                .expect("session duration should fit in u32");
+        let minutes = chrono::Duration::days(30)
+            .num_minutes()
+            .try_into()
+            .expect("session duration should fit in u32");
 
-            Arc::new(StytchAuth {
-                client: stytch_config.client().expect("Stytch client"),
-                base_url: base_url.clone(),
-                session_duration_minutes: Some(minutes),
-            })
-        }
+        Arc::new(StytchAuth {
+            client: stytch_config.client().unwrap(),
+            base_url: base_url.clone(),
+            session_duration_minutes: Some(minutes),
+        })
     };
 
     let database_pool = PgPoolOptions::new()
@@ -209,80 +201,4 @@ impl metagram::AuthN for StytchAuth {
         };
         req.send(self.client.clone()).await
     }
-}
-
-pub fn mock_auth() -> metagram::MockAuthN {
-    use mockall::predicate as p;
-
-    let mut mock = metagram::MockAuthN::new();
-
-    mock.expect_send_magic_link()
-        .with(p::eq("user@metagram.test".to_string()), p::always())
-        .returning(|_, _| {
-            Ok(stytch::magic_links::email::SendResponse {
-                status_code: http::StatusCode::OK,
-                request_id: "mock-request".to_string(),
-                user_id: std::env::var("STYTCH_USER_ID").unwrap(),
-                email_id: "".to_string(),
-            })
-        });
-
-    mock.expect_authenticate_magic_link()
-        .returning(|stytch_user_id| {
-            Ok(stytch::magic_links::AuthenticateResponse {
-                user_id: stytch_user_id.clone(),
-                status_code: http::StatusCode::OK,
-                request_id: "mock-request".to_string(),
-                user: stytch::User {},
-                session: Some(stytch::Session {
-                    user_id: stytch_user_id,
-                    session_id: "mock-session".to_string(),
-                    authentication_factors: vec![],
-                    started_at: chrono::Utc::now() - chrono::Duration::hours(1),
-                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
-                    last_accessed_at: chrono::Utc::now(),
-                    attributes: stytch::Attributes {
-                        ip_address: "".to_string(),
-                        user_agent: "".to_string(),
-                    },
-                }),
-                session_token: "mock-session-token".to_string(),
-                session_jwt: String::new(),
-            })
-        });
-
-    mock.expect_authenticate_session()
-        .with(p::eq("mock-session-token".to_string()))
-        .returning(|tok| {
-            Ok(stytch::sessions::AuthenticateResponse {
-                status_code: http::StatusCode::OK,
-                request_id: "mock-request".to_string(),
-                session: stytch::Session {
-                    user_id: std::env::var("STYTCH_USER_ID").unwrap(),
-                    session_id: "mock-session".to_string(),
-                    authentication_factors: vec![],
-                    started_at: chrono::Utc::now() - chrono::Duration::hours(1),
-                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
-                    last_accessed_at: chrono::Utc::now(),
-                    attributes: stytch::Attributes {
-                        ip_address: "".to_string(),
-                        user_agent: "".to_string(),
-                    },
-                },
-                session_token: Some(tok),
-                session_jwt: String::new(),
-            })
-        });
-
-    mock.expect_authenticate_session().returning(|_| {
-        Err(stytch::Error::Response(stytch::ErrorResponse {
-            status_code: http::StatusCode::UNAUTHORIZED,
-            request_id: "mock-request".to_string(),
-            error_type: "invalid_session_token".to_string(),
-            error_message: "...".to_string(),
-            error_url: "...".to_string(),
-        }))
-    });
-
-    mock
 }
