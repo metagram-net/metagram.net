@@ -73,7 +73,7 @@ impl Drop {
         };
 
         match parse_domain_name(&domain) {
-            Ok(domain) => Some(domain.to_string()),
+            Ok(domain) => domain.root().map(String::from),
             Err(err) => {
                 tracing::error!({ ?err, ?url }, "URL without valid domain");
                 None
@@ -140,6 +140,9 @@ mod tests {
         let d = drop(None, "https://example.net/something".to_string());
         assert_eq!(d.domain(), Some("example.net".to_string()));
 
+        let d = drop(None, "https://www.example.net/something".to_string());
+        assert_eq!(d.domain(), Some("example.net".to_string()));
+
         let d = drop(None, "https://example.pvt.k12.ma.us".to_string());
         assert_eq!(d.domain(), Some("example.pvt.k12.ma.us".to_string()));
 
@@ -156,6 +159,7 @@ mod tests {
             url,
             status: DropStatus::Unread,
             moved_at: now,
+            hydrant_id: None,
             created_at: now,
             updated_at: now,
         }
