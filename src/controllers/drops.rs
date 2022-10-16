@@ -2,10 +2,12 @@ use std::collections::HashSet;
 
 use askama::Template;
 use axum::{
+    headers::{Header, Referer},
     response::{IntoResponse, Redirect, Response},
-    Extension,
+    Extension, TypedHeader,
 };
 use axum_extra::{extract::Form, routing::TypedPath};
+use http::HeaderValue;
 use serde::Deserialize;
 use sqlx::Acquire;
 use uuid::Uuid;
@@ -324,6 +326,7 @@ pub async fn r#move(
     session: Session,
     PgConn(mut db): PgConn,
     Form(form): Form<MoveForm>,
+    Back { return_path }: Back,
 ) -> Result<Redirect, impl IntoResponse> {
     let now = chrono::Utc::now();
 
@@ -334,14 +337,17 @@ pub async fn r#move(
 
     let drop = firehose::move_drop(&mut db, drop, form.status, now).await;
     match drop {
-        // TODO: redirect back to wherever you did this from
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
+        Ok(drop) => {
+            // Redirect back to the page the action was taken from. If we don't know, go to the
+            // drop page.
+            let dest = return_path.unwrap_or_else(|| Member { id: drop.drop.id }.to_string());
+            Ok(Redirect::to(&dest))
+        }
         Err(err) => Err(context.error(Some(session), err.into())),
     }
 }
 
 fn bookmarklet(base_url: url::Url) -> String {
-    // let href = crate::controllers::drops::New.to_string();
     let href = base_url.join(&New.to_string()).unwrap();
 
     format!(
@@ -355,6 +361,39 @@ fn coerce_empty(s: String) -> Option<String> {
         None
     } else {
         Some(s)
+    }
+}
+
+pub struct Back {
+    return_path: Option<String>,
+}
+
+#[axum::async_trait]
+impl<B> axum::extract::FromRequest<B> for Back
+where
+    B: Send,
+{
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request(
+        req: &mut axum::extract::RequestParts<B>,
+    ) -> Result<Self, Self::Rejection> {
+        let value = TypedHeader::<Referer>::from_request(req).await.ok();
+
+        let return_path = match value {
+            None => None,
+            Some(value) => {
+                let mut paths = Vec::<HeaderValue>::new();
+                value.encode(&mut paths);
+                paths
+                    .get(0)
+                    .and_then(|p| p.to_str().ok())
+                    .map(|s| s.to_string())
+                    .and_then(coerce_empty)
+            }
+        };
+
+        Ok(Self { return_path })
     }
 }
 
