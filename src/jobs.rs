@@ -11,6 +11,7 @@ use crate::queue::{Context, Task};
 use crate::{firehose, queue};
 
 pub async fn cron(db: PgPool, mut shutdown: watch::Receiver<bool>) -> Result<(), JoinError> {
+    // TODO: Make a real crontab instead of being relative to deploy time.
     let mut hourly = tokio::time::interval(Duration::from_secs(60 * 60));
 
     tokio::spawn(async move {
@@ -31,18 +32,25 @@ pub async fn cron(db: PgPool, mut shutdown: watch::Receiver<bool>) -> Result<(),
 
 async fn push_cron(pool: &PgPool) -> anyhow::Result<()> {
     let mut conn = pool.acquire().await?;
-    queue::push_uniq(&mut conn, &HydrateAll {}, chrono::Utc::now()).await?;
+    let now = chrono::Utc::now();
+
+    queue::push_uniq(&mut conn, &HydrateAll {}, now).await?;
+    queue::push_uniq(&mut conn, &Cleanup {}, now).await?;
     Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Tick {}
+pub struct Cleanup {}
 
 #[typetag::serde]
 #[async_trait]
-impl Task for Tick {
-    async fn run(&self, _ctx: &mut Context) -> anyhow::Result<()> {
-        tracing::info!("Tick!");
+impl Task for Cleanup {
+    async fn run(&self, ctx: &mut Context) -> anyhow::Result<()> {
+        let now = chrono::Utc::now();
+        let clear_before = now - chrono::Duration::days(7);
+
+        queue::clear_finished(&mut *ctx.tx, clear_before).await?;
+
         Ok(())
     }
 }

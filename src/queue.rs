@@ -252,3 +252,21 @@ async fn mark_failure(
     .fetch_one(conn)
     .await
 }
+
+pub async fn clear_finished(
+    conn: &mut PgConnection,
+    now: chrono::DateTime<chrono::Utc>,
+) -> sqlx::Result<Vec<Job>> {
+    sqlx::query_as!(
+        Job,
+        "
+        delete from jobs
+        where finished_at < $1
+        and error is null
+        returning *
+        ",
+        now.naive_utc(),
+    )
+    .fetch_all(conn)
+    .await
+}
