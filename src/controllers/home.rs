@@ -74,6 +74,7 @@ pub struct Licenses;
 struct LicensesPage {
     context: Context,
     user: Option<User>,
+    raw_licenses_html: String,
 }
 
 pub async fn licenses(
@@ -84,5 +85,6 @@ pub async fn licenses(
     LicensesPage {
         context,
         user: session.map(|s| s.user),
+        raw_licenses_html: crate::RAW_LICENSE_HTML.to_string(),
     }
 }

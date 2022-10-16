@@ -73,7 +73,7 @@ description = "Run cargo-about to generate license information"
 command = "cargo"
 args = [
     "about", "generate",
-    "--output-file", "templates/home/licenses.html",
+    "--output-file", "licenses.html",
     "templates/home/licenses.hbs",
 ]
 

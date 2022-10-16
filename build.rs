@@ -1,27 +1,36 @@
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
-    let out_dir = PathBuf::from(&env::var("OUT_DIR").unwrap());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let out = PathBuf::from(&env::var("OUT_DIR").unwrap());
 
-    fs::write(out_dir.join("build_profile"), env::var("PROFILE").unwrap()).unwrap();
+    fs::write(out.join("build_profile"), env::var("PROFILE").unwrap()).unwrap();
 
-    let commit_hash = match git_hash(env!("CARGO_MANIFEST_DIR")) {
+    let commit_hash = match git_hash(&root) {
         Some(hash) => hash,
         None => env::var("METAGRAM_COMMIT_HASH").unwrap(),
     };
 
-    fs::write(out_dir.join("commit_hash"), commit_hash).unwrap();
+    fs::write(out.join("commit_hash"), commit_hash).unwrap();
+
+    let res = fs::copy(root.join("licenses.html"), out.join("licenses.html"));
+    if res.is_err() && env::var("CI").unwrap_or_default() == "true" {
+        // Don't break the CI build if license data hasn't been generated yet. The production build
+        // will always write out license info before building the server.
+        fs::write(out.join("licenses.html"), "(CI skip licenses)").unwrap();
+    }
 }
 
-fn git_hash(cwd: &str) -> Option<String> {
+fn git_hash(repo: &Path) -> Option<String> {
     let hash = {
         let output = Command::new("git")
             .arg("rev-parse")
             .arg("HEAD")
-            .current_dir(cwd)
+            .current_dir(repo)
             .output()
             .ok()?;
 
@@ -37,7 +46,7 @@ fn git_hash(cwd: &str) -> Option<String> {
             .arg("diff")
             .arg("--quiet")
             .arg("--exit-code")
-            .current_dir(cwd)
+            .current_dir(repo)
             .status()
             .ok()?;
 

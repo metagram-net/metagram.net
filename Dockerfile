@@ -34,7 +34,7 @@ COPY about.toml about.toml
 COPY templates/home/licenses.hbs templates/home/licenses.hbs
 
 RUN cargo about generate \
-    --output-file templates/home/licenses.html \
+    --output-file licenses.html \
     templates/home/licenses.hbs
 
 ###############################################################################
@@ -46,8 +46,8 @@ WORKDIR /usr/local/src/metagram
 
 COPY . .
 COPY --from=licenses \
-    /usr/local/src/metagram/templates/home/licenses.html \
-    /usr/local/src/metagram/templates/home/licenses.html
+    /usr/local/src/metagram/licenses.html \
+    /usr/local/src/metagram/licenses.html
 
 ENV SQLX_OFFLINE=true
 

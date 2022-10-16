@@ -1,6 +1,6 @@
-dist/css
-dist/js
-node_modules
-target
-templates/home/licenses.html
-tmp
+/dist/css
+/dist/js
+/licenses.html
+/node_modules
+/target
+/tmp

@@ -37,6 +37,8 @@ mod routes;
 
 const COMMIT_HASH: &str = include_str!(concat!(env!("OUT_DIR"), "/commit_hash"));
 const BUILD_PROFILE: &str = include_str!(concat!(env!("OUT_DIR"), "/build_profile"));
+const RAW_LICENSE_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/licenses.html"));
+
 const SOURCE_URL: &str = "https://github.com/metagram-net/metagram.net";
 
 pub struct PgConn(sqlx::pool::PoolConnection<sqlx::Postgres>);

@@ -1,0 +1,9 @@
+{% extends "layouts/base.html" %}
+
+{% block main %}
+<h1>All licenses</h1>
+
+<p>This page lists the licenses for Metagram and its dependencies.</p>
+
+{{ raw_licenses_html|safe }}
+{% endblock %}
