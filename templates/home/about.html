@@ -3,15 +3,27 @@
 {% block main %}
 <h1>About</h1>
 
-<p>Metagram is proudly built on top of free and open source software. Thank you
-to everyone who has contributed to the frameworks, libraries, tools, and
-everything else that makes it possible to create this.</p>
+<p>
+Metagram is a web development playground.
+The dream is to have a network of apps that are useful, interesting, or fun to work on.
+<p>
+
+<p>
+Right now, there's just
+<a href="{{ crate::controllers::firehose::Root.to_string() }}">Firehose</a>
+, a very opinionated personal content queue.
+</p>
 
 <p>Check out the <a href="{{ source_url }}">source code</a>!</p>
 
-<p>Build info: {{ commit_hash }} ({{ build_profile }})</p>
+<p>
+Metagram is proudly built on top of free and open source software.
+Thank you to everyone who has contributed to the frameworks, libraries, tools, and everything else that makes it possible to create this.
+</p>
 
 <a href="{{ crate::controllers::home::Licenses.to_string() }}">
   View all licenses
 </a></p>
 {% endblock %}
+
+<p>Build info: {{ commit_hash }} ({{ build_profile }})</p>
