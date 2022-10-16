@@ -38,6 +38,56 @@
     },
     "query": "\n        insert into users (stytch_user_id)\n        values ($1)\n        returning *\n        "
   },
+  "06b03e52fbd800ef31b07a0a58576e505da9db025f8ce6a80039ef8200f765d8": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "params",
+          "ordinal": 1,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "scheduled_at",
+          "ordinal": 2,
+          "type_info": "Timestamp"
+        },
+        {
+          "name": "started_at",
+          "ordinal": 3,
+          "type_info": "Timestamp"
+        },
+        {
+          "name": "finished_at",
+          "ordinal": 4,
+          "type_info": "Timestamp"
+        },
+        {
+          "name": "error",
+          "ordinal": 5,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Timestamp"
+        ]
+      }
+    },
+    "query": "\n        delete from jobs\n        where finished_at < $1\n        and error is null\n        returning *\n        "
+  },
   "2652da9790e74ca6fc5002cd8ec76eb9abf2cea2608ab7f0a372d85a9e6bc7cd": {
     "describe": {
       "columns": [
