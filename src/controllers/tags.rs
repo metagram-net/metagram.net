@@ -72,6 +72,7 @@ pub async fn index(
 }
 
 #[derive(Default, Deserialize)]
+#[serde(default)]
 pub struct TagForm {
     name: String,
     color: String,

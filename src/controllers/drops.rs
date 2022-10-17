@@ -74,6 +74,7 @@ pub async fn index(_: Collection) -> Redirect {
 }
 
 #[derive(Default, Deserialize)]
+#[serde(default)]
 pub struct DropForm {
     title: String,
     url: String,
@@ -132,26 +133,18 @@ fn tag_selectors(opts: &HashSet<String>) -> Vec<firehose::TagSelector> {
 }
 
 #[derive(Default, Deserialize)]
+#[serde(default)]
 pub struct ShareQuery {
-    text: Option<String>,
-    title: Option<String>,
-    url: Option<String>,
+    text: String,
+    title: String,
+    url: String,
 }
 
 impl ShareQuery {
     fn form(&self) -> DropForm {
-        let mut text = match &self.text {
-            Some(text) => text.trim(),
-            None => "",
-        };
-        let mut title = match &self.title {
-            Some(title) => title.trim(),
-            None => "",
-        };
-        let mut url = match &self.url {
-            Some(url) => url.trim(),
-            None => "",
-        };
+        let mut text = self.text.trim();
+        let mut title = self.title.trim();
+        let mut url = self.url.trim();
 
         if url.is_empty() {
             (text, url) = find_url(text);
@@ -474,7 +467,7 @@ mod tests {
         assert_eq!("", form.url);
 
         let form = ShareQuery {
-            text: Some("https://example.com/sample".to_string()),
+            text: "https://example.com/sample".to_string(),
             ..Default::default()
         }
         .form();
@@ -482,7 +475,7 @@ mod tests {
         assert_eq!("https://example.com/sample", form.url);
 
         let form = ShareQuery {
-            text: Some("Shared from Twitter: https://example.com/sample".to_string()),
+            text: "Shared from Twitter: https://example.com/sample".to_string(),
             ..Default::default()
         }
         .form();
@@ -490,8 +483,8 @@ mod tests {
         assert_eq!("https://example.com/sample", form.url);
 
         let form = ShareQuery {
-            text: Some(r#"Watch "this video" on ..."#.to_string()),
-            url: Some("https://example.com/sample".to_string()),
+            text: r#"Watch "this video" on ..."#.to_string(),
+            url: "https://example.com/sample".to_string(),
             ..Default::default()
         }
         .form();
@@ -499,8 +492,8 @@ mod tests {
         assert_eq!("https://example.com/sample", form.url);
 
         let form = ShareQuery {
-            title: Some("Test Title".to_string()),
-            url: Some("https://example.com/sample".to_string()),
+            title: "Test Title".to_string(),
+            url: "https://example.com/sample".to_string(),
             ..Default::default()
         }
         .form();

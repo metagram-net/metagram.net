@@ -83,6 +83,7 @@ struct NewStream {
 }
 
 #[derive(Default, Deserialize)]
+#[serde(default)]
 pub struct StreamForm {
     name: String,
     tags: Vec<String>,

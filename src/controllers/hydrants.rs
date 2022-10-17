@@ -80,10 +80,11 @@ pub async fn index(
 }
 
 #[derive(Default, Deserialize)]
+#[serde(default)]
 pub struct HydrantForm {
     name: String,
     url: String,
-    #[serde(default, deserialize_with = "checkbox")]
+    #[serde(deserialize_with = "checkbox")]
     active: bool,
     tags: HashSet<String>,
 
