@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+mod invite;
 mod seed;
 
 #[derive(Parser, Debug)]
@@ -15,6 +16,9 @@ struct Cli {
 enum Cmd {
     /// Generate fake test data for local development.
     Seed(seed::Cli),
+
+    /// Invite a new user by email address.
+    Invite(invite::Cli),
 }
 
 #[tokio::main]
@@ -23,5 +27,6 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Cmd::Seed(cmd) => cmd.run().await,
+        Cmd::Invite(cmd) => cmd.run().await,
     }
 }
