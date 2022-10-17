@@ -6,7 +6,7 @@
     "build-js": "node build.mjs"
   },
   "dependencies": {
-    "jquery": "^3.6.0",
+    "jquery": "^3.6.1",
     "select2": "^4.0.13"
   },
   "devDependencies": {
