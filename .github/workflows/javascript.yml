@@ -1,0 +1,56 @@
+name: JavaScript
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run format-check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run lint
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    # Wait until linting is done to reuse the build cache...
+    needs: [lint]
+    # ... but run the tests even if linting fails to avoid PR churn.
+    if: ${{ always() }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run build
