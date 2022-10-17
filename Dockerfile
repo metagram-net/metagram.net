@@ -6,7 +6,7 @@ FROM node:18 as bundle
 WORKDIR /usr/local/src/metagram
 
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm ci
 
 COPY . .
 
@@ -43,6 +43,12 @@ RUN cargo about generate \
 FROM rust:1.63 as build
 
 WORKDIR /usr/local/src/metagram
+
+# Copy in just enough to make `cargo fetch` work.
+COPY Cargo.toml Cargo.lock ./
+COPY src/bin src/bin
+
+RUN cargo fetch
 
 COPY . .
 COPY --from=licenses \
