@@ -62,7 +62,7 @@ a {
   [multiple],
   textarea,
   select {
-    @apply dark:bg-black dark:text-white;
+    @apply border border-gray-400 dark:border-gray-800 bg-gray-50 dark:bg-black dark:text-white;
   }
 
   button,
