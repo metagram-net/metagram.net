@@ -18,7 +18,14 @@
   {% endmatch %}
 
   {% if drops.is_empty() %}
-    <p>You've reached the end of the stream!</p>
+    <p>There's nothing here!</p>
+    <p>
+      If you're new to Firehose, welcome! Find something you've been meaning to read,
+      watch, or listen to and
+      <a href="{{ crate::controllers::drops::New.to_string() }}">add it</a>.
+    </p>
+    <p>If you really did actually make it to the end... congratulations?</p>
+    <p></p>
   {% else %}
     <ul>
       {% for drop in drops %}
