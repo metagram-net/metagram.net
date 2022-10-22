@@ -1,0 +1,1 @@
+-- This migration drops functions and is therefore irreversible.
