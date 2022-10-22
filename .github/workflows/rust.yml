@@ -93,11 +93,11 @@ jobs:
         with:
           toolchain: 1.63
 
-      - run: cargo install --git https://github.com/jdkaplan/drift
+      - run: cargo install squill --version 0.3.0
 
-      - run: drift migrate
+      - run: squill migrate
         env:
-          DRIFT_DATABASE_URL: "postgres://postgres:postgres@localhost:5432/metagram_test"
+          SQUILL_DATABASE_URL: "postgres://postgres:postgres@localhost:5432/metagram_test"
 
       - run: cargo test
         env:

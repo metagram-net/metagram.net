@@ -3,7 +3,7 @@ kill_timeout = 60
 processes = []
 
 [deploy]
-release_command = "drift migrate"
+release_command = "squill migrate"
 
 [env]
 BASE_URL = 'https://metagram.net/'

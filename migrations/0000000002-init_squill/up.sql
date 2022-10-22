@@ -1,3 +1,7 @@
+--drift:no-transaction
+--squill:no-transaction
+begin;
+
 -- The original Go version of Drift has now been rewritten in Rust and renamed
 -- Squill. So it's time to change the function names!
 --
@@ -39,3 +43,6 @@ begin
     end if;
 end;
 $$ language plpgsql;
+
+select _squill_claim_migration(2, 'init_squill');
+commit;

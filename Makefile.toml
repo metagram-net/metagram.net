@@ -34,9 +34,8 @@ run_task = { name = ["services-down", "services", "db-wait", "migrate", "seed"] 
 
 [tasks.migrate]
 description = "Run database migrations"
-install_crate = "drift"
-install_crate_args = ["--git", "https://github.com/jdkaplan/drift"]
-command = "drift"
+install_crate = "squill"
+command = "squill"
 args = ["migrate"]
 
 [tasks.services]

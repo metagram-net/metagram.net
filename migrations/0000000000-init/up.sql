@@ -28,6 +28,7 @@ assumes that the migration records table has exactly that name and has the
 bigint primary key id column.
 */
 --drift:no-transaction
+--squill:no-transaction
 begin;
 
 create table schema_migrations (

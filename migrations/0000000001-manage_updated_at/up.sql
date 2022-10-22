@@ -9,6 +9,13 @@
 --
 -- SELECT manage_updated_at('users');
 -- ```
+
+-- The Squill setup happens _after_ this migration, so running this on a fresh
+-- database will fail. Execute the drift transaction and claim manually.
+--drift:no-transaction
+--squill:no-transaction
+begin;
+
 CREATE OR REPLACE FUNCTION manage_updated_at(_tbl regclass) RETURNS VOID AS $$
 BEGIN
     EXECUTE format('CREATE TRIGGER set_updated_at BEFORE UPDATE ON %s
@@ -27,3 +34,6 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+select _drift_claim_migration(1, 'manage_updated_at');
+commit;

@@ -66,8 +66,7 @@ RUN cargo build --release --bin server
 ###############################################################################
 FROM rust:1.63
 
-ENV DRIFT_REV='b50fb4f5220eb39b1bc8ff7856eaf787c2ddaacd'
-RUN cargo install --git 'https://github.com/jdkaplan/drift' --rev "${DRIFT_REV}"
+RUN cargo install squill --version 0.3.0
 
 WORKDIR /usr/local/src/metagram
 
