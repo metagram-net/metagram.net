@@ -245,7 +245,14 @@ pub async fn show(
         }
     };
 
-    let drops = firehose::list_drops(&mut db, &session.user, stream.filters()).await;
+    let mut filters = stream.filters();
+
+    // Custom streams don't have a default status filter, so fill one in.
+    if filters.status.is_none() {
+        filters.status = Some(DropStatus::Unread);
+    }
+
+    let drops = firehose::list_drops(&mut db, &session.user, filters).await;
 
     match drops {
         Ok(drops) => Ok(ShowPage {
