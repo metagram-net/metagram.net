@@ -3,11 +3,11 @@
 {% block main %}
   <h1>{{ hydrant.hydrant.name }}</h1>
 
-  <span class="tags mb-2 space-x-2">
+  <ul class="my-2 flex space-x-2">
     {% for tag in hydrant.tags %}
-      {% include "firehose/tags/_badge.html" %}
+      <li>{% include "firehose/tags/_badge.html" %}</li>
     {% endfor %}
-  </span>
+  </ul>
 
   <p>URL: <a href="{{ hydrant.hydrant.url }}">{{ hydrant.hydrant.url }}</a></p>
 

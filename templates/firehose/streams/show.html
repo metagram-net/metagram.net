@@ -8,7 +8,7 @@
   {% when firehose::Stream::Custom with (stream) %}
     <h1>{{ stream.stream.name }}</h1>
 
-    <ul class="my-2 inline-block">
+    <ul class="my-2 flex space-x-2">
       {% for tag in stream.tags %}
         <li>{% include "firehose/tags/_badge.html" %}</li>
       {% endfor %}
