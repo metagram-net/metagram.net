@@ -210,57 +210,6 @@
     },
     "query": "\n        insert into jobs\n        (params, scheduled_at)\n        values\n        ($1, $2)\n        returning *\n        "
   },
-  "34afad2b0a7710a24baa577b5336c124e1c408fb17c8b1b6229ad78d822d8f13": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "user_id",
-          "ordinal": 1,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "name",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "color",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 4,
-          "type_info": "Timestamp"
-        },
-        {
-          "name": "updated_at",
-          "ordinal": 5,
-          "type_info": "Timestamp"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "UuidArray"
-        ]
-      }
-    },
-    "query": "\n        select * from tags\n        where user_id = $1 and id = ANY($2)\n        "
-  },
   "38a7b412a17b03df5809ddad8850e454e352f329f7c13e76cb7d1d28fc663d6d": {
     "describe": {
       "columns": [
@@ -312,56 +261,6 @@
       }
     },
     "query": "\n        insert into streams\n        (user_id, name, tag_ids)\n        values\n        ($1, $2, $3)\n        returning *\n        "
-  },
-  "41fdda7e2fc4c0d4a017ff06572a438a58d8b4607b3297eaf25f561b3325e266": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "user_id",
-          "ordinal": 1,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "name",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "color",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 4,
-          "type_info": "Timestamp"
-        },
-        {
-          "name": "updated_at",
-          "ordinal": 5,
-          "type_info": "Timestamp"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid"
-        ]
-      }
-    },
-    "query": "\n        select * from tags\n        where user_id = $1\n        "
   },
   "507a942ff1a26fa3b5fcbf0276e2a49a3795c568012b00b520fababc4a6e750d": {
     "describe": {
@@ -431,7 +330,45 @@
     },
     "query": "\n            select *\n            from hydrants\n            where id = $1\n            for update\n            "
   },
-  "5621628bc49b48e1446431f12f695444368b4a4310eb2545490f698d0219d133": {
+  "5d9b8f7f77d4e469ca907b2863c27bc54b7c5b74d6d22616f2ab56eb28f78da0": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "stytch_user_id",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 2,
+          "type_info": "Timestamp"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 3,
+          "type_info": "Timestamp"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "\n        select * from users\n        where stytch_user_id = $1\n        "
+  },
+  "7d1ce3b5cf38adfcba229011fd4387efc47450ab724a5e7aa67fe6350614186b": {
     "describe": {
       "columns": [
         {
@@ -475,49 +412,12 @@
       ],
       "parameters": {
         "Left": [
-          "Uuid"
+          "Uuid",
+          "UuidArray"
         ]
       }
     },
-    "query": "\n        select tags.*\n        from tags\n        join drop_tags on drop_tags.tag_id = tags.id\n        where drop_tags.drop_id = $1\n        "
-  },
-  "5d9b8f7f77d4e469ca907b2863c27bc54b7c5b74d6d22616f2ab56eb28f78da0": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "stytch_user_id",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 2,
-          "type_info": "Timestamp"
-        },
-        {
-          "name": "updated_at",
-          "ordinal": 3,
-          "type_info": "Timestamp"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Text"
-        ]
-      }
-    },
-    "query": "\n        select * from users\n        where stytch_user_id = $1\n        "
+    "query": "\n        select * from tags\n        where user_id = $1 and id = ANY($2)\n        order by name asc\n        "
   },
   "827e68bbba3bdd4885f76f94c48a704de90275229e739191fe482974eadc0505": {
     "describe": {
@@ -754,6 +654,106 @@
       }
     },
     "query": "\n        update jobs\n        set started_at = $1\n        where id in (\n            select id from jobs\n            where started_at is null\n            order by scheduled_at asc\n            for update skip locked\n            limit 1\n        )\n        returning *\n        "
+  },
+  "aa3db32d16b68246d66ab29df4d26a0c65044314f1879ca521324d106477e14e": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "user_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "name",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "color",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "type_info": "Timestamp"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 5,
+          "type_info": "Timestamp"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      }
+    },
+    "query": "\n        select * from tags\n        where user_id = $1\n        order by name asc\n        "
+  },
+  "c4fc153f93cedc88b6d76ac928dbbec15599ca1c80cb0e387f1360132de4ac87": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "user_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "name",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "color",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "type_info": "Timestamp"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 5,
+          "type_info": "Timestamp"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      }
+    },
+    "query": "\n        select tags.*\n        from tags\n        join drop_tags on drop_tags.tag_id = tags.id\n        where drop_tags.drop_id = $1\n        order by tags.name asc\n        "
   },
   "c74d87d2327a8b85559a629a5deb4147530518764fadac9ba0c1a0efcd03efa2": {
     "describe": {
