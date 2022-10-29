@@ -220,6 +220,11 @@ pub async fn find_drop(
     query.push_bind(user.id);
     query.push(" and drops.id = ");
     query.push_bind(id);
+    query.push(
+        "
+        order by tags.name asc
+        ",
+    );
 
     let rows: Vec<JoinDropsTagsRow> = query.build_query_as().fetch_all(conn).await?;
     Ok(Drop::from_rows_one(rows))
@@ -254,6 +259,7 @@ async fn load_drop_tags(
         from tags
         join drop_tags on drop_tags.tag_id = tags.id
         where drop_tags.drop_id = $1
+        order by tags.name asc
         ",
         drop.id,
     )
@@ -301,6 +307,7 @@ pub async fn create_drop(
             }
 
             attach_tags(&mut *tx, &drop, &tags).await?;
+            tags.sort_by_key(|t| t.name.clone());
 
             Ok(Drop { drop, tags })
         })
@@ -411,6 +418,7 @@ pub async fn list_tags(
         "
         select * from tags
         where user_id = $1
+        order by name asc
         ",
         user.id,
     )
@@ -429,6 +437,7 @@ pub async fn find_tags(
         "
         select * from tags
         where user_id = $1 and id = ANY($2)
+        order by name asc
         ",
         user.id,
         ids,
@@ -759,6 +768,14 @@ pub async fn custom_streams(
     let mut query = JoinStreamsTagsRow::select();
     query.push(" where streams.user_id = ");
     query.push_bind(user.id);
+    query.push(
+        "
+        order by
+            streams.name asc
+          , streams.created_at asc
+          , tags.name asc
+        ",
+    );
 
     let rows: Vec<JoinStreamsTagsRow> = query.build_query_as().fetch_all(conn).await?;
     Ok(CustomStream::from_rows_vec(rows))
@@ -793,6 +810,14 @@ pub async fn find_stream(
     query.push_bind(user.id);
     query.push(" and streams.id = ");
     query.push_bind(id);
+    query.push(
+        "
+        order by
+            streams.name asc
+          , streams.created_at asc
+          , tags.name asc
+        ",
+    );
 
     let rows: Vec<JoinStreamsTagsRow> = query.build_query_as().fetch_all(conn).await?;
     Ok(CustomStream::from_rows_one(rows))
@@ -1145,6 +1170,14 @@ pub async fn list_hydrants(
     let mut query = JoinHydrantsTagsRow::select();
     query.push(" where hydrants.user_id = ");
     query.push_bind(user.id);
+    query.push(
+        "
+        order by
+            hydrants.name asc
+          , hydrants.created_at asc
+          , tags.name asc
+        ",
+    );
 
     let rows: Vec<JoinHydrantsTagsRow> = query.build_query_as().fetch_all(conn).await?;
     Ok(Hydrant::from_rows_vec(rows))
@@ -1175,6 +1208,14 @@ pub async fn find_hydrant(
     query.push_bind(user.id);
     query.push(" and hydrants.id = ");
     query.push_bind(id);
+    query.push(
+        "
+        order by
+            hydrants.name asc
+          , hydrants.created_at asc
+          , tags.name asc
+        ",
+    );
 
     let rows: Vec<JoinHydrantsTagsRow> = query.build_query_as().fetch_all(conn).await?;
     Ok(Hydrant::from_rows_one(rows))
@@ -1220,6 +1261,8 @@ pub async fn create_hydrant(
             );
 
             let hydrant = query.fetch_one(&mut *tx).await?;
+
+            tags.sort_by_key(|t| t.name.clone());
             Ok(Hydrant { hydrant, tags })
         })
     })
@@ -1403,7 +1446,7 @@ mod tests {
         assert_eq!(found, created);
 
         let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
-        assert_eq!(tag_names, vec!["Coffee", "ABC"]);
+        assert_eq!(tag_names, vec!["ABC", "Coffee"]);
     }
 
     #[tokio::test]
@@ -1694,7 +1737,7 @@ mod tests {
         assert_eq!(created, found);
 
         let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
-        assert_eq!(tag_names, vec!["Red", "Blue"]);
+        assert_eq!(tag_names, vec!["Blue", "Red"]);
     }
 
     #[tokio::test]
@@ -1842,7 +1885,7 @@ mod tests {
         assert_eq!(created, found);
 
         let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
-        assert_eq!(tag_names, vec!["Red", "Blue"]);
+        assert_eq!(tag_names, vec!["Blue", "Red"]);
     }
 
     #[tokio::test]
@@ -1942,7 +1985,7 @@ mod tests {
 
         let found = list_hydrants(&mut conn, &user).await.unwrap();
 
-        let expected = vec![painted, only_blue];
+        let expected = vec![only_blue, painted];
         assert_eq!(found, expected);
     }
 
