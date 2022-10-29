@@ -201,6 +201,7 @@ pub async fn list_drops(
         where drops.id in (select id from drop_ids)
         order by
             drops.moved_at asc
+          , drops.id asc
           , tags.name asc
         ",
     );
