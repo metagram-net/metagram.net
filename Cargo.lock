@@ -85,7 +85,7 @@ checksum = "216261ddc8289130e551ddcd5ce8a064710c0d064a4d2895c67151c92b5443f6"
 [[package]]
 name = "askama"
 version = "0.11.2"
-source = "git+https://github.com/djc/askama#c441459a27eb7c0c476ce70833e05224ba6894fd"
+source = "git+https://github.com/djc/askama#1b18bab91ba773425e521abc276a1278e0d61f3c"
 dependencies = [
  "askama_derive",
  "askama_escape",
@@ -97,7 +97,7 @@ dependencies = [
 [[package]]
 name = "askama_axum"
 version = "0.1.0"
-source = "git+https://github.com/djc/askama#c441459a27eb7c0c476ce70833e05224ba6894fd"
+source = "git+https://github.com/djc/askama#1b18bab91ba773425e521abc276a1278e0d61f3c"
 dependencies = [
  "askama",
  "axum-core",
@@ -107,7 +107,7 @@ dependencies = [
 [[package]]
 name = "askama_derive"
 version = "0.12.0"
-source = "git+https://github.com/djc/askama#c441459a27eb7c0c476ce70833e05224ba6894fd"
+source = "git+https://github.com/djc/askama#1b18bab91ba773425e521abc276a1278e0d61f3c"
 dependencies = [
  "mime",
  "mime_guess",
@@ -122,7 +122,7 @@ dependencies = [
 [[package]]
 name = "askama_escape"
 version = "0.10.3"
-source = "git+https://github.com/djc/askama#c441459a27eb7c0c476ce70833e05224ba6894fd"
+source = "git+https://github.com/djc/askama#1b18bab91ba773425e521abc276a1278e0d61f3c"
 
 [[package]]
 name = "async-trait"
