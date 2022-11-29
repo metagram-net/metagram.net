@@ -9,5 +9,25 @@
     {% endfor %}
   </ul>
 
-  <p><a href="{{ crate::controllers::hydrants::New.to_string() }}">New hydrant</a>
+  {% if hydrants.is_empty() %}
+    <p>You don't have any hydrants.</p>
+
+    <p>
+      A hydrant is a way to automatically add drops to Firehose. Right now, the
+      only kind of hydrant is an RSS/Atom feed.
+    </p>
+
+    <p>
+      Add a new RSS feed with the feed URL and name it whatever you like.
+      Firehose will automatically fetch that feed and add all of its items as
+      new drops.
+    </p>
+
+    <p>
+      If you add tags to the hydrant, all of its future drops will
+      automatically have those tags.
+    </p>
+  {% endif %}
+
+  <p><a href="{{ crate::controllers::hydrants::New.to_string() }}">New hydrant</a></p>
 {% endblock %}
