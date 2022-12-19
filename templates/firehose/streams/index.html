@@ -9,5 +9,20 @@
     {% endfor %}
   </ul>
 
-  <p><a href="{{ crate::controllers::streams::New.to_string() }}">New stream</a>
+  {% if streams.len() <= 3 %} {# only the three status streams #}
+    <p>You don't have any custom streams.</p>
+
+    <p>
+      A stream is a way to view filtered drops. The three default streams
+      filter by status, but you can add custom streams that filter by a set of
+      tags.
+    </p>
+
+    <p>
+      Create a new custom stream by choosing a name and a set of tags. Any drop
+      that matches any of these tags will be included in the stream.
+    </p>
+  {% endif %}
+
+  <p><a href="{{ crate::controllers::streams::New.to_string() }}">New stream</a></p>
 {% endblock %}
