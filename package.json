@@ -9,7 +9,7 @@
     "lint": "eslint js src"
   },
   "dependencies": {
-    "jquery": "^3.6.2",
+    "jquery": "^3.6.3",
     "select2": "^4.0.13"
   },
   "devDependencies": {
