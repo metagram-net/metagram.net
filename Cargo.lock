@@ -255,7 +255,7 @@ checksum = "4098e0707eeeabc1405fde1595653ac2d7eb7f5c06ba8ae73edeca5ce1cb7e8f"
 dependencies = [
  "async-trait",
  "axum",
- "base64",
+ "base64 0.13.1",
  "bcrypt",
  "cookie",
  "rand",
@@ -269,12 +269,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
+name = "base64"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
+
+[[package]]
 name = "bcrypt"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7e7c93a3fb23b2fdde989b2c9ec4dd153063ec81f408507f84c090cd91c6641"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "blowfish",
  "getrandom",
  "zeroize",
@@ -397,12 +403,12 @@ dependencies = [
 
 [[package]]
 name = "cookie"
-version = "0.16.1"
+version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "344adc371239ef32293cb1c4fe519592fcf21206c79c02854320afcdf3ab4917"
+checksum = "e859cd57d0710d9e06c381b550c06e76992472a8c6d527aecd2fc673dcc231fb"
 dependencies = [
  "aes-gcm",
- "base64",
+ "base64 0.20.0",
  "hmac",
  "percent-encoding",
  "rand",
@@ -937,7 +943,7 @@ version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3e372db8e5c0d213e0cd0b9be18be2aca3d44cf2fe30a9d46a65581cd454584"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "bitflags",
  "bytes",
  "headers-core",
@@ -1309,7 +1315,7 @@ dependencies = [
  "axum-extra",
  "axum-macros",
  "axum_csrf",
- "base64",
+ "base64 0.13.1",
  "chrono",
  "clap",
  "cookie",
@@ -1861,7 +1867,7 @@ version = "0.11.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68cc60575865c7831548863cc02356512e3f1dc2f3f82cb837d7fc4cc8f3c97c"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -2025,7 +2031,7 @@ version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "368f2d60d049ea019a84dcd6687b0d1e0030fe663ae105039bdf967ed5e6a9a7"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "chrono",
  "hex",
  "indexmap",
@@ -2141,7 +2147,7 @@ checksum = "dcbc16ddba161afc99e14d1713a453747a2b07fc097d2009f4c300ec99286105"
 dependencies = [
  "ahash",
  "atoi",
- "base64",
+ "base64 0.13.1",
  "bitflags",
  "byteorder",
  "bytes",
@@ -2241,7 +2247,7 @@ version = "0.2.1"
 source = "git+https://github.com/jdkaplan/stytch-rust#fe4a3cf702565ff566d80272e5860d75dd11d3f1"
 dependencies = [
  "async-trait",
- "base64",
+ "base64 0.13.1",
  "chrono",
  "derivative",
  "http",
