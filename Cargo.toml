@@ -35,7 +35,7 @@ stytch = { git = "https://github.com/jdkaplan/stytch-rust", features = ["reqwest
 thiserror = "1.0.36"
 tokio = { version = "1.24.1", features = ["full"] }
 tower = "0.4.13"
-tower-http = { version = "0.3.4", features = ["trace", "request-id", "fs"] }
+tower-http = { version = "0.3.5", features = ["trace", "request-id", "fs"] }
 tracing = "0.1.36"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter", "json"] }
 typetag = "0.2.3"
