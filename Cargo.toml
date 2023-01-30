@@ -43,7 +43,7 @@ url = "2.3.1"
 uuid = { version = "1.2.2", features = ["v4", "serde"] }
 
 [dev-dependencies]
-axum-macros = "0.2.3"
+axum-macros = "0.3.2"
 
 [package.metadata.cargo-machete]
 ignored = [
