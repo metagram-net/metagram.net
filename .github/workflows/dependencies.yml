@@ -3,6 +3,8 @@ name: Dependencies
 on:
   pull_request:
     paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
       - '**/Cargo.lock'
       - '**/Cargo.toml'
 
