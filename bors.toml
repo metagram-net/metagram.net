@@ -1,0 +1,4 @@
+status = [
+  "JavaScript / Build",
+  "Rust / Test",
+]
