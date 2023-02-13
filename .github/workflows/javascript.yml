@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+      # Bors branches
+      - staging
+      - trying
 
 jobs:
   format:
