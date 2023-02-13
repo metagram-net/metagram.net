@@ -1,0 +1,8 @@
+status = [
+  "JavaScript / Build",
+  "Rust / Test",
+]
+
+pr_status = [
+  "Dependencies / cargo-deny",
+]
