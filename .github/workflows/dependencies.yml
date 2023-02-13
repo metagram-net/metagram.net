@@ -6,6 +6,7 @@ on:
       - '**/Cargo.lock'
       - '**/Cargo.toml'
 
+jobs:
   cargo-deny:
     runs-on: ubuntu-latest
 
