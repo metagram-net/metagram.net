@@ -1286,7 +1286,7 @@ dependencies = [
  "axum-extra",
  "axum-macros",
  "axum_csrf",
- "base64 0.13.1",
+ "base64 0.21.0",
  "chrono",
  "clap",
  "cookie",
