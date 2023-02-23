@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
@@ -58,7 +59,9 @@ async fn main() {
     let base_url = url::Url::parse(&config.base_url).expect("BASE_URL should be a valid URL");
 
     let cookie_key = {
-        let key = base64::decode(config.cookie_key).expect("COOKIE_KEY should be valid base64");
+        let key = BASE64_STANDARD
+            .decode(config.cookie_key)
+            .expect("COOKIE_KEY should be valid base64");
         cookie::Key::from(&key)
     };
 
