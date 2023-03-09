@@ -16,6 +16,8 @@ struct Config {
 
     #[serde(default, deserialize_with = "bool_from_string")]
     dev_logging: bool,
+    #[serde(default)]
+    log_level: String,
 
     stytch_env: stytch::Env,
     stytch_project_id: String,
@@ -50,10 +52,18 @@ async fn main() {
         Err(err) => panic!("{:#?}", err),
     };
 
+    let log_level: tracing::Level = config.log_level.parse().unwrap_or(tracing::Level::INFO);
+
     if config.dev_logging {
-        tracing_subscriber::fmt().pretty().init();
+        tracing_subscriber::fmt()
+            .pretty()
+            .with_max_level(log_level)
+            .init();
     } else {
-        tracing_subscriber::fmt().json().init();
+        tracing_subscriber::fmt()
+            .json()
+            .with_max_level(log_level)
+            .init();
     }
 
     let base_url = url::Url::parse(&config.base_url).expect("BASE_URL should be a valid URL");
