@@ -1,19 +1,19 @@
 use askama::Template;
 use axum::{
-    extract::{Extension, RequestParts},
-    handler::Handler,
+    extract::FromRef,
     http::{Request, StatusCode},
     response::{IntoResponse, IntoResponseParts, Response, ResponseParts},
     Router,
 };
-use axum_csrf::{CsrfConfig, CsrfLayer, CsrfToken};
-use axum_extra::routing::SpaRouter;
+use axum_csrf::{CsrfConfig, CsrfToken};
+use axum_extra::routing::RouterExt;
 use derivative::Derivative;
 use sqlx::PgPool;
 use std::net::SocketAddr;
 use tokio::sync::watch;
 use tower::ServiceBuilder;
 use tower_http::{
+    services::ServeDir,
     trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
@@ -33,7 +33,6 @@ mod controllers;
 mod filters;
 pub mod jobs;
 pub mod queue;
-mod routes;
 
 const COMMIT_HASH: &str = include_str!(concat!(env!("OUT_DIR"), "/commit_hash"));
 const BUILD_PROFILE: &str = include_str!(concat!(env!("OUT_DIR"), "/build_profile"));
@@ -44,23 +43,24 @@ const SOURCE_URL: &str = "https://github.com/metagram-net/metagram.net";
 pub struct PgConn(sqlx::pool::PoolConnection<sqlx::Postgres>);
 
 #[axum::async_trait]
-impl<B> axum::extract::FromRequest<B> for PgConn
+impl<S> axum::extract::FromRequestParts<S> for PgConn
 where
-    B: Send,
+    S: Send + Sync,
+    CsrfConfig: FromRef<S>,
+    PgPool: FromRef<S>,
 {
     type Rejection = Response;
 
-    async fn from_request(
-        req: &mut axum::extract::RequestParts<B>,
+    async fn from_request_parts(
+        parts: &mut http::request::Parts,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
-        let pool: Extension<PgPool> = Extension::from_request(req)
-            .await
-            .expect("extension: PgPool");
+        let pool = PgPool::from_ref(state);
 
         match pool.acquire().await {
             Ok(conn) => Ok(PgConn(conn)),
             Err(err) => {
-                let context = Context::from_request(req).await.unwrap();
+                let context = Context::from_request_parts(parts, state).await.unwrap();
                 Err(context.error(None, err.into()))
             }
         }
@@ -78,15 +78,98 @@ pub struct ServerConfig {
 }
 
 pub struct Server {
-    router: Router,
+    app: Router<()>,
 }
+
+#[derive(Clone)]
+pub struct AppState {
+    base_url: BaseUrl,
+    database_pool: PgPool,
+    cookie_key: cookie::Key,
+    auth: Auth,
+    csrf_config: CsrfConfig,
+}
+
+macro_rules! from_ref_clone {
+    ( $State:ty, $T:ty, $field:ident) => {
+        impl axum::extract::FromRef<$State> for $T {
+            fn from_ref(state: &$State) -> Self {
+                state.$field.clone()
+            }
+        }
+    };
+}
+
+from_ref_clone!(AppState, BaseUrl, base_url);
+from_ref_clone!(AppState, PgPool, database_pool);
+from_ref_clone!(AppState, Auth, auth);
+from_ref_clone!(AppState, cookie::Key, cookie_key);
+from_ref_clone!(AppState, axum_csrf::CsrfConfig, csrf_config);
 
 impl Server {
     pub async fn new(config: ServerConfig) -> anyhow::Result<Self> {
-        let router = routes::build()
-            // Apparently the SPA router is the easiest way to serve assets at a nested route.
-            .merge(SpaRouter::new("/dist", "dist"))
-            .fallback(not_found.into_service());
+        let state = AppState {
+            base_url: BaseUrl(config.base_url),
+            database_pool: config.database_pool,
+            cookie_key: config.cookie_key.clone(),
+            auth: config.auth,
+            csrf_config: CsrfConfig::new()
+                .with_cookie_path("/")
+                .with_secure(true)
+                .with_http_only(true)
+                .with_cookie_same_site(axum_csrf::SameSite::Strict)
+                // There are two versions of cookie around, and axum-extra's is currently
+                // newer than axum-csrf's. So convert the key from one to the other by re-parsing
+                // the bytes.
+                .with_key(Some(axum_csrf::Key::from(config.cookie_key.master()))),
+        };
+
+        // TODO: Extract this router back into a routes.rs file
+        let router = Router::new()
+            .typed_get(controllers::home::index)
+            .typed_get(controllers::home::about)
+            .typed_get(controllers::home::licenses)
+            .typed_get(controllers::home::health_check)
+            .typed_get(controllers::auth::login)
+            .typed_post(controllers::auth::login_form)
+            .typed_post(controllers::auth::logout)
+            .typed_get(controllers::auth::authenticate)
+            .typed_head(controllers::auth::authenticate_head)
+            .typed_get(controllers::firehose::index)
+            .typed_get(controllers::firehose::about)
+            .typed_get(controllers::firehose::manifest)
+            .typed_get(controllers::firehose::service_worker)
+            .typed_get(controllers::drops::index)
+            .typed_get(controllers::drops::new)
+            .typed_post(controllers::drops::create)
+            .typed_get(controllers::drops::show)
+            .typed_get(controllers::drops::edit)
+            .typed_post(controllers::drops::update)
+            .typed_post(controllers::drops::r#move)
+            .typed_get(controllers::hydrants::index)
+            .typed_get(controllers::hydrants::new)
+            .typed_post(controllers::hydrants::create)
+            .typed_get(controllers::hydrants::show)
+            .typed_get(controllers::hydrants::edit)
+            .typed_post(controllers::hydrants::update)
+            .typed_post(controllers::hydrants::delete)
+            .typed_get(controllers::streams::index)
+            .typed_get(controllers::streams::new)
+            .typed_post(controllers::streams::create)
+            .typed_get(controllers::streams::show)
+            .typed_get(controllers::streams::edit)
+            .typed_post(controllers::streams::update)
+            .typed_get(controllers::tags::index)
+            .typed_get(controllers::tags::new)
+            .typed_post(controllers::tags::create)
+            .typed_get(controllers::tags::show)
+            .typed_get(controllers::tags::edit)
+            .typed_post(controllers::tags::update)
+            .typed_get(controllers::errors::internal_server_error)
+            .typed_get(controllers::errors::unprocessable_entity)
+            .fallback(not_found)
+            .with_state(state.clone())
+            .nest_service("/dist", ServeDir::new("dist"));
 
         let trace_layer = TraceLayer::new_for_http()
             .make_span_with(
@@ -110,27 +193,19 @@ impl Server {
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
-            .layer(Extension::<BaseUrl>(BaseUrl(config.base_url)))
-            .layer(Extension::<PgPool>(config.database_pool))
-            .layer(Extension::<cookie::Key>(config.cookie_key.clone()))
-            .layer(Extension::<auth::Auth>(config.auth))
             // This ordering is important! While processing the inbound request, auto_csrf_token
             // assumes that CsrfLayer has already extracted the authenticity token from the
             // cookies. When generating the outbound response, order doesn't matter. So keep
             // auto_csrf_token deeper in the middleware stack.
             //
+            // Why do this on every request instead of just where it's needed? When the user is
+            // logged in, every page (even error pages) contains a logout form that would require
+            // doing this anyway.
+            //
             // TODO: Could this become CsrfLayer's job?
-            .layer(axum::middleware::from_fn(auto_csrf_token))
-            .layer(CsrfLayer::new(
-                CsrfConfig::new()
-                    .with_cookie_path("/")
-                    .with_secure(true)
-                    .with_http_only(true)
-                    .with_cookie_same_site(cookie::SameSite::Strict)
-                    .with_key(Some(config.cookie_key)),
-            ));
+            .layer(axum::middleware::from_fn_with_state(state, auto_csrf_token));
 
-        Ok(Self { router: app })
+        Ok(Self { app })
     }
 
     pub async fn run(
@@ -140,7 +215,7 @@ impl Server {
     ) -> hyper::Result<()> {
         tracing::info!("Listening on http://{}", addr);
         axum::Server::bind(&addr)
-            .serve(self.router.into_make_service())
+            .serve(self.app.into_make_service())
             .with_graceful_shutdown(async {
                 // Either this is a legit shutdown signal or the sender disappeared. Either way,
                 // we're done!
@@ -151,13 +226,10 @@ impl Server {
 }
 
 async fn auto_csrf_token<B: Send>(
+    csrf_token: CsrfToken,
     req: Request<B>,
     next: axum::middleware::Next<B>,
 ) -> impl IntoResponse {
-    let mut parts = RequestParts::new(req);
-    let csrf_token: CsrfToken = parts.extract().await.expect("layer: CsrfToken");
-
-    let req = parts.try_into_request().expect("into request");
     (csrf_token, next.run(req).await)
 }
 
@@ -238,21 +310,23 @@ impl Context {
 }
 
 #[axum::async_trait]
-impl<B> axum::extract::FromRequest<B> for Context
+impl<S> axum::extract::FromRequestParts<S> for Context
 where
-    B: Send,
+    S: Send + Sync,
+    CsrfConfig: FromRef<S>,
 {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request(
-        req: &mut axum::extract::RequestParts<B>,
+    async fn from_request_parts(
+        parts: &mut http::request::Parts,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
-        let csrf_token = CsrfToken::from_request(req)
+        let csrf_token = CsrfToken::from_request_parts(parts, state)
             .await
             .expect("layer: CsrfToken");
 
-        let request_id = req
-            .headers()
+        let request_id = parts
+            .headers
             .get("x-request-id")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());

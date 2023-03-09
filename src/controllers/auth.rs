@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Extension, Form, Query},
+    extract::{Form, Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
 };
@@ -52,7 +52,7 @@ pub async fn login_form(
     _: Login,
     context: Context,
     session: Option<Session>,
-    Extension(auth): Extension<auth::Auth>,
+    State(auth): State<auth::Auth>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
@@ -93,7 +93,7 @@ pub async fn authenticate(
     session: Option<Session>,
     cookies: PrivateCookieJar,
     PgConn(mut db): PgConn,
-    Extension(auth): Extension<auth::Auth>,
+    State(auth): State<auth::Auth>,
     Query(query): Query<AuthenticateQuery>,
 ) -> Result<AuthenticateResponse, Response> {
     let res = match auth.authenticate_magic_link(query.token).await {
@@ -139,7 +139,7 @@ pub async fn logout(
     context: Context,
     session: Option<Session>,
     cookies: PrivateCookieJar,
-    Extension(auth): Extension<auth::Auth>,
+    State(auth): State<auth::Auth>,
     Form(form): Form<LogoutForm>,
 ) -> impl IntoResponse {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {

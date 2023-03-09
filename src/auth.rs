@@ -1,11 +1,12 @@
 use async_trait::async_trait;
 use axum::{
-    extract::Extension,
+    extract::FromRef,
     response::{IntoResponse, Redirect, Response},
 };
+use axum_csrf::CsrfConfig;
 use axum_extra::extract::PrivateCookieJar;
 use cookie::Cookie;
-use sqlx::PgExecutor;
+use sqlx::{PgExecutor, PgPool};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -47,21 +48,29 @@ pub struct Session {
 }
 
 #[axum::async_trait]
-impl<B> axum::extract::FromRequest<B> for Session
+impl<S> axum::extract::FromRequestParts<S> for Session
 where
-    B: Send,
+    S: Send + Sync,
+    PgPool: axum::extract::FromRef<S>,
+    Auth: axum::extract::FromRef<S>,
+    cookie::Key: axum::extract::FromRef<S>,
+    CsrfConfig: axum::extract::FromRef<S>,
 {
     type Rejection = Response;
 
-    async fn from_request(
-        req: &mut axum::extract::RequestParts<B>,
+    async fn from_request_parts(
+        parts: &mut http::request::Parts,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
-        let auth: Extension<Auth> = Extension::from_request(req).await.unwrap();
-        let cookies = PrivateCookieJar::from_request(req).await.unwrap();
+        let auth = Auth::from_ref(state);
+        let cookies = match PrivateCookieJar::from_request_parts(parts, state).await {
+            Ok(cookies) => cookies,
+            Err(err) => match err {}, // Infallible!
+        };
 
-        let PgConn(mut db) = PgConn::from_request(req).await?;
+        let mut db = PgConn::from_request_parts(parts, state).await?.0;
 
-        match find_session(&mut db, &*auth, cookies).await {
+        match find_session(&mut db, &auth, cookies).await {
             Ok(session) => Ok(session),
             Err(err) => {
                 tracing::error!({ ?err }, "no active session");
@@ -120,7 +129,7 @@ pub async fn find_user(conn: impl PgExecutor<'_>, user_id: Uuid) -> sqlx::Result
 async fn find_session(
     conn: impl PgExecutor<'_>,
     auth: &Auth,
-    cookies: PrivateCookieJar<cookie::Key>,
+    cookies: PrivateCookieJar,
 ) -> anyhow::Result<Session> {
     let session_token = cookies
         .get(SESSION_COOKIE_NAME)
@@ -144,8 +153,8 @@ async fn find_session(
 
 pub async fn revoke_session(
     auth: &Auth,
-    cookies: PrivateCookieJar<cookie::Key>,
-) -> anyhow::Result<PrivateCookieJar<cookie::Key>> {
+    cookies: PrivateCookieJar,
+) -> anyhow::Result<PrivateCookieJar> {
     let session_token = cookies
         .get(SESSION_COOKIE_NAME)
         .map(|c| c.value().to_string());

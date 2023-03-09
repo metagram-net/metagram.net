@@ -2,10 +2,10 @@ use std::collections::HashSet;
 
 use askama::Template;
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     headers::{Header, Referer},
     response::{IntoResponse, Redirect, Response},
-    Extension, TypedHeader,
+    TypedHeader,
 };
 use axum_extra::{extract::Form, routing::TypedPath};
 use http::HeaderValue;
@@ -21,7 +21,7 @@ use crate::{
     filters,
     view_models::{tag_options, TagOption},
 };
-use crate::{BaseUrl, Context, PgConn, Session};
+use crate::{AppState, BaseUrl, Context, PgConn, Session};
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/drops")]
@@ -177,7 +177,7 @@ fn find_url(text: &str) -> (&str, &str) {
 
 pub async fn new(
     _: New,
-    Extension(base_url): Extension<BaseUrl>,
+    State(base_url): State<BaseUrl>,
     PgConn(mut db): PgConn,
     context: Context,
     session: Session,
@@ -203,7 +203,7 @@ pub async fn create(
     _: Collection,
     context: Context,
     session: Session,
-    Extension(base_url): Extension<BaseUrl>,
+    State(base_url): State<BaseUrl>,
     PgConn(mut db): PgConn,
     Form(mut form): Form<DropForm>,
 ) -> Result<Redirect, Response> {
@@ -372,11 +372,15 @@ pub struct MoveForm {
 
 pub async fn r#move(
     Move { id }: Move,
+    Back { return_path }: Back,
+
+    // TODO: Why is this line needed? Is it a "type hint" that AppState is needed?
+    State(_state): State<AppState>,
+
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
     Form(form): Form<MoveForm>,
-    Back { return_path }: Back,
 ) -> Result<Redirect, impl IntoResponse> {
     let now = chrono::Utc::now();
 
@@ -419,16 +423,19 @@ pub struct Back {
 }
 
 #[axum::async_trait]
-impl<B> axum::extract::FromRequest<B> for Back
+impl<S> axum::extract::FromRequestParts<S> for Back
 where
-    B: Send,
+    S: Send + Sync,
 {
     type Rejection = std::convert::Infallible;
 
-    async fn from_request(
-        req: &mut axum::extract::RequestParts<B>,
+    async fn from_request_parts(
+        parts: &mut http::request::Parts,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
-        let value = TypedHeader::<Referer>::from_request(req).await.ok();
+        let value = TypedHeader::<Referer>::from_request_parts(parts, state)
+            .await
+            .ok();
 
         let return_path = match value {
             None => None,
