@@ -54,7 +54,7 @@ impl Worker {
 
                 let job = tokio::select! {
                     _ = shutdown.changed() => break,
-                    res = claim_job(&mut *tx, chrono::Utc::now()) => match res {
+                    res = claim_job(&mut tx, chrono::Utc::now()) => match res {
                         Ok(Some(job)) => job,
                         Ok(None) => {
                             tracing::info!("No jobs to run");
@@ -84,16 +84,16 @@ impl Worker {
         tracing::info!({ ?job }, "Running job");
 
         let task: Box<dyn Task> = serde_json::from_value(job.params.clone())?;
-        let mut ctx = Context { tx: &mut *tx };
+        let mut ctx = Context { tx: &mut tx };
 
         match task.run(&mut ctx).await {
             Ok(_) => {
                 tracing::info!({ ?job }, "Job succeeded");
-                mark_success(&mut *tx, job, chrono::Utc::now()).await?;
+                mark_success(&mut tx, job, chrono::Utc::now()).await?;
             }
             Err(err) => {
                 tracing::error!({ ?job, ?err }, "Job failed");
-                mark_failure(&mut *tx, job, chrono::Utc::now(), err.to_string()).await?;
+                mark_failure(&mut tx, job, chrono::Utc::now(), err.to_string()).await?;
             }
         }
 
@@ -137,10 +137,10 @@ pub async fn push_uniq(
 ) -> anyhow::Result<Job> {
     let mut tx = conn.begin().await?;
 
-    let res = find_job_by_type(&mut *tx, task.typetag_name()).await?;
+    let res = find_job_by_type(&mut tx, task.typetag_name()).await?;
     let job = match res {
         Some(job) => job,
-        None => insert_job(&mut *tx, task, scheduled_at).await?,
+        None => insert_job(&mut tx, task, scheduled_at).await?,
     };
 
     tx.commit().await?;
