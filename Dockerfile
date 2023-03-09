@@ -15,7 +15,7 @@ RUN npm run build
 ###############################################################################
 # Build License page template
 ###############################################################################
-FROM rust:1.63 as licenses
+FROM rust:1.67 as licenses
 
 ENV CARGO_ABOUT_VERSION='0.5.1'
 ENV CARGO_ABOUT_PACKAGE="cargo-about-${CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl"
@@ -40,7 +40,7 @@ RUN cargo about generate \
 ###############################################################################
 # Build the server
 ###############################################################################
-FROM rust:1.63 as build
+FROM rust:1.67 as build
 
 WORKDIR /usr/local/src/metagram
 
@@ -64,7 +64,7 @@ RUN cargo build --release --bin server
 ###############################################################################
 # Make the runnable image
 ###############################################################################
-FROM rust:1.63
+FROM rust:1.67
 
 RUN cargo install squill --version 0.3.0
 
