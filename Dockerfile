@@ -66,7 +66,7 @@ RUN cargo build --release --bin server
 ###############################################################################
 FROM rust:1.67
 
-RUN cargo install squill --version 0.3.0
+RUN cargo install squill --version 0.4.0
 
 WORKDIR /usr/local/src/metagram
 
