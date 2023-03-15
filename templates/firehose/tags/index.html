@@ -15,5 +15,26 @@
     {% endfor %}
   </ul>
 
+  {% if tags.is_empty() %}
+  <p>You don't have any tags.</p>
+
+  <p>
+    When you
+    <a href="{{ crate::controllers::drops::New.to_string() }}">add a drop</a>,
+    you can apply tags to it. You can then filter drops by those tags.
+  </p>
+
+  <p>
+    You can create a
+    <a href="{{ crate::controllers::drops::Collection.to_string() }}">custom stream</a>
+    that shows drops matching a set of tags.
+  </p>
+
+  <p>
+    A set of tags can automatically be applied to all new drops created by a
+    <a href="{{ crate::controllers::hydrants::Collection.to_string() }}">hydrant</a>.
+  </p>
+  {% endif %}
+
   <p><a href="{{ crate::controllers::tags::New.to_string() }}">New tag</a>
 {% endblock %}
