@@ -10,7 +10,7 @@ anyhow = "1.0.70"
 askama = { git = "https://github.com/djc/askama", features = [ "with-axum" ] } # version = 0.11.2
 askama_axum = { git = "https://github.com/djc/askama" } # version = 0.1.0
 async-trait = "0.1.66"
-axum = { version = "0.6.10", features = ["headers", "macros"] }
+axum = { version = "0.6.11", features = ["headers", "macros"] }
 axum-extra = { version = "0.7.1", features = ["cookie-private", "cookie", "typed-routing", "form"] }
 axum_csrf = "0.6.0"
 base64 = "0.21.0"
@@ -35,7 +35,7 @@ stytch = { git = "https://github.com/jdkaplan/stytch-rust", features = ["reqwest
 thiserror = "1.0.40"
 tokio = { version = "1.26.0", features = ["full"] }
 tower = "0.4.13"
-tower-http = { version = "0.4.0", features = ["trace", "request-id", "fs"] }
+tower-http = { version = "0.4.0", features = ["trace", "request-id", "fs", "util"] }
 tracing = "0.1.36"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter", "json"] }
 typetag = "0.2.7"
