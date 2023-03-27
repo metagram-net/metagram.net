@@ -13,7 +13,7 @@
     "select2": "^4.0.13"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^5.55.0",
+    "@typescript-eslint/eslint-plugin": "^5.56.0",
     "@typescript-eslint/parser": "^5.55.0",
     "esbuild": "^0.17.11",
     "esbuild-sass-plugin": "^2.7.0",
