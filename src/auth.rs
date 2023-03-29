@@ -16,7 +16,6 @@ const SESSION_COOKIE_NAME: &str = "metagram_session";
 
 pub type Auth = Arc<dyn AuthN + Send + Sync>;
 
-#[mockall::automock]
 #[async_trait]
 pub trait AuthN {
     async fn send_magic_link(
