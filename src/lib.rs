@@ -25,7 +25,7 @@ pub use models::User;
 
 pub mod auth;
 use auth::Session;
-pub use auth::{Auth, AuthN, MockAuthN};
+pub use auth::{Auth, AuthN};
 
 pub mod firehose;
 
