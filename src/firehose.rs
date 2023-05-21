@@ -999,6 +999,11 @@ impl Hydrant {
         .fetch_one(&mut tx)
         .await?;
 
+        // Ignore inactive hydrants.
+        if !hydrant.active {
+            return Ok(());
+        }
+
         let content = client
             .request(http::Method::GET, &hydrant.url)
             .send()
@@ -1188,9 +1193,13 @@ pub async fn stale_hydrants(
     now: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<Vec<Hydrant>> {
     let mut query = JoinHydrantsTagsRow::select();
-    query.push("where hydrants.fetched_at is null ");
+    query.push("where hydrants.active = true ");
+
+    query.push(" and ( ");
+    query.push(" hydrants.fetched_at is null ");
     query.push(" or hydrants.fetched_at < ");
     query.push_bind(now.naive_utc());
+    query.push(" ) ");
 
     let rows: Vec<JoinHydrantsTagsRow> = query.build_query_as().fetch_all(conn).await?;
     Ok(Hydrant::from_rows_vec(rows))
@@ -2003,6 +2012,101 @@ mod tests {
 
         let expected = vec![only_blue, painted];
         assert_eq!(found, expected);
+    }
+
+    #[tokio::test]
+    async fn stale_hydrants_list() {
+        let mut conn = test_conn().await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
+
+        let url = lorem_rss().unwrap().join("feed").unwrap();
+
+        let now = chrono::Utc::now();
+        let client = reqwest::Client::new();
+
+        let found = stale_hydrants(&mut tx, now).await.unwrap();
+        assert_eq!(found, vec![]);
+
+        // Leave this one unfetched.
+        let new = create_hydrant(&mut tx, &user, "New", url.as_ref(), true, None)
+            .await
+            .unwrap();
+
+        let stale = {
+            let hydrant = create_hydrant(&mut tx, &user, "Stale", url.as_ref(), true, None)
+                .await
+                .unwrap();
+            Hydrant::fetch(
+                &mut tx,
+                &client,
+                hydrant.hydrant.id,
+                now - chrono::Duration::minutes(1),
+            )
+            .await
+            .unwrap();
+
+            find_hydrant(&mut tx, &user, hydrant.hydrant.id)
+                .await
+                .unwrap()
+        };
+
+        let _fresh = {
+            let hydrant = create_hydrant(&mut tx, &user, "Fresh", url.as_ref(), true, None)
+                .await
+                .unwrap();
+            Hydrant::fetch(
+                &mut tx,
+                &client,
+                hydrant.hydrant.id,
+                // Avoid sub-second equality issues by ensuring that this one's fetched_at is
+                // strictly greater than now.
+                now + chrono::Duration::seconds(1),
+            )
+            .await
+            .unwrap();
+
+            find_hydrant(&mut tx, &user, hydrant.hydrant.id)
+                .await
+                .unwrap()
+        };
+
+        let _inactive = create_hydrant(&mut tx, &user, "Inactive", url.as_ref(), false, None)
+            .await
+            .unwrap();
+
+        let found = stale_hydrants(&mut tx, now).await.unwrap();
+
+        let expected = vec![new, stale];
+        assert_eq!(found, expected);
+    }
+
+    #[tokio::test]
+    async fn fetch_skips_inactive_hydrant() {
+        let mut conn = test_conn().await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
+
+        let url = lorem_rss().unwrap().join("feed").unwrap();
+
+        let now = chrono::Utc::now();
+        let client = reqwest::Client::new();
+
+        let hydrant = create_hydrant(&mut tx, &user, "Inactive", url.as_ref(), false, None)
+            .await
+            .unwrap();
+
+        Hydrant::fetch(&mut tx, &client, hydrant.hydrant.id, now)
+            .await
+            .unwrap();
+
+        let found = find_hydrant(&mut tx, &user, hydrant.hydrant.id)
+            .await
+            .unwrap();
+
+        assert_eq!(found.hydrant.fetched_at, None);
     }
 
     #[tokio::test]
