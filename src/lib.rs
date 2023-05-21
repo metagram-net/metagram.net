@@ -81,7 +81,7 @@ pub struct Server {
     app: Router<()>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, FromRef)]
 pub struct AppState {
     base_url: BaseUrl,
     database_pool: PgPool,
@@ -89,22 +89,6 @@ pub struct AppState {
     auth: Auth,
     csrf_config: CsrfConfig,
 }
-
-macro_rules! from_ref_clone {
-    ( $State:ty, $T:ty, $field:ident) => {
-        impl axum::extract::FromRef<$State> for $T {
-            fn from_ref(state: &$State) -> Self {
-                state.$field.clone()
-            }
-        }
-    };
-}
-
-from_ref_clone!(AppState, BaseUrl, base_url);
-from_ref_clone!(AppState, PgPool, database_pool);
-from_ref_clone!(AppState, Auth, auth);
-from_ref_clone!(AppState, cookie::Key, cookie_key);
-from_ref_clone!(AppState, axum_csrf::CsrfConfig, csrf_config);
 
 impl Server {
     pub async fn new(config: ServerConfig) -> anyhow::Result<Self> {
