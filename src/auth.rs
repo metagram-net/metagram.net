@@ -73,7 +73,7 @@ where
             Ok(session) => Ok(session),
             Err(err) => {
                 tracing::error!({ ?err }, "no active session");
-                Err(Redirect::to(&crate::controllers::auth::Login.to_string()).into_response())
+                Err(Redirect::to(&crate::web::auth::Login.to_string()).into_response())
             }
         }
     }

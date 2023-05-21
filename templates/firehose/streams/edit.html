@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::streams::Member::path_uuid(id) }}"
+  action="{{ crate::web::streams::Member::path_uuid(id) }}"
 >
   {% call form::errors("Stream", stream.errors) %}
 

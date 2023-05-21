@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::drops::Collection.to_string() }}"
+  action="{{ crate::web::drops::Collection.to_string() }}"
 >
   {% call form::errors("Drop", drop.errors) %}
 

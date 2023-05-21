@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::tags::Collection.to_string() }}"
+  action="{{ crate::web::tags::Collection.to_string() }}"
 >
   {% call form::errors("Tag", tag.errors) %}
 

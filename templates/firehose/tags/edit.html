@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::tags::Member::path(id) }}"
+  action="{{ crate::web::tags::Member::path(id) }}"
 >
   {% call form::errors("Tag", tag.errors) %}
 

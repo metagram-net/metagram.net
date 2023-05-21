@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::hydrants::Member::path(id) }}"
+  action="{{ crate::web::hydrants::Member::path(id) }}"
 >
   {% call form::errors("Hydrant", hydrant.errors) %}
 
@@ -21,7 +21,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::hydrants::Delete::path(id) }}"
+  action="{{ crate::web::hydrants::Delete::path(id) }}"
 >
   <button type="submit" class="btn btn-gray">Delete Hydrant</button>
 </form>

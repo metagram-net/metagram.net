@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::streams::Collection.to_string() }}"
+  action="{{ crate::web::streams::Collection.to_string() }}"
 >
   {% call form::errors("Stream", stream.errors) %}
 

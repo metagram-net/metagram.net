@@ -23,14 +23,14 @@
     <nav class="bg-gray-50 dark:bg-gray-800 py-1 px-2">
       <ul class="md:flex md:justify-between">
         <div class="md:flex md:space-x-4">
-          <li><a href="{{ crate::controllers::home::Root.to_string() }}">Metagram</a></li>
-          <li><a href="{{ crate::controllers::firehose::Root.to_string() }}">Firehose</a></li>
-          <li><a href="{{ crate::controllers::home::About.to_string() }}">About</a></li>
+          <li><a href="{{ crate::web::home::Root.to_string() }}">Metagram</a></li>
+          <li><a href="{{ crate::web::firehose::Root.to_string() }}">Firehose</a></li>
+          <li><a href="{{ crate::web::home::About.to_string() }}">About</a></li>
         </div>
         <div class="md:flex md:space-x-4">
           {% match user %}
           {% when Some(user) %}
-          <form method="POST" action="{{ crate::controllers::auth::Logout.to_string() }}">
+          <form method="POST" action="{{ crate::web::auth::Logout.to_string() }}">
             <input
               type="hidden"
               name="authenticity_token"
@@ -39,7 +39,7 @@
             <button type="submit">Log out</button>
           </form>
           {% when None %}
-          <a href="{{ crate::controllers::auth::Login.to_string() }}">Log in</a>
+          <a href="{{ crate::web::auth::Login.to_string() }}">Log in</a>
           {% endmatch %}
         </div>
       </ul>

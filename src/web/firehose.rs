@@ -103,14 +103,14 @@ pub async fn manifest(_: Manifest) -> ([(HeaderName, &'static str); 1], Json<pwa
                 sizes: "512x512".to_string(),
             },
         ],
-        start_url: crate::controllers::streams::Member::path("unread"),
+        start_url: crate::web::streams::Member::path("unread"),
         background_color: "#C21B29".to_string(),
         display: "standalone".to_string(),
         // The trailing slash is required for the whole directory to be in-scope.
         scope: Root.to_string() + "/",
         theme_color: "#C21B29".to_string(),
         share_target: pwa::ShareTarget {
-            action: crate::controllers::drops::New.to_string(),
+            action: crate::web::drops::New.to_string(),
             method: "GET".to_string(),
             enctype: "application/x-www-form-urlencoded".to_string(),
             params: pwa::ShareParams {

@@ -6,7 +6,7 @@
   <ul class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 my-4">
     {% for tag in tags %}
     <a
-      href="{{ crate::controllers::tags::Member::path(tag.id) }}"
+      href="{{ crate::web::tags::Member::path(tag.id) }}"
       class="border-2 rounded-lg p-3 text-center no-underline hover:text-mg"
       style="border-color: {{ tag.color }}; --mg-color: {{ tag.color }}"
     >
@@ -20,21 +20,21 @@
 
   <p>
     When you
-    <a href="{{ crate::controllers::drops::New.to_string() }}">add a drop</a>,
+    <a href="{{ crate::web::drops::New.to_string() }}">add a drop</a>,
     you can apply tags to it. You can then filter drops by those tags.
   </p>
 
   <p>
     You can create a
-    <a href="{{ crate::controllers::drops::Collection.to_string() }}">custom stream</a>
+    <a href="{{ crate::web::drops::Collection.to_string() }}">custom stream</a>
     that shows drops matching a set of tags.
   </p>
 
   <p>
     A set of tags can automatically be applied to all new drops created by a
-    <a href="{{ crate::controllers::hydrants::Collection.to_string() }}">hydrant</a>.
+    <a href="{{ crate::web::hydrants::Collection.to_string() }}">hydrant</a>.
   </p>
   {% endif %}
 
-  <p><a href="{{ crate::controllers::tags::New.to_string() }}">New tag</a>
+  <p><a href="{{ crate::web::tags::New.to_string() }}">New tag</a>
 {% endblock %}

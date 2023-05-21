@@ -28,10 +28,10 @@ pub use auth::{Auth, AuthN};
 
 pub mod firehose;
 
-mod controllers;
 mod filters;
 pub mod jobs;
 pub mod queue;
+mod web;
 
 const COMMIT_HASH: &str = include_str!(concat!(env!("OUT_DIR"), "/commit_hash"));
 const BUILD_PROFILE: &str = include_str!(concat!(env!("OUT_DIR"), "/build_profile"));
@@ -108,7 +108,7 @@ impl Server {
         };
 
         let router = Router::new()
-            .merge(controllers::router())
+            .merge(web::router())
             .fallback(not_found)
             .with_state(state.clone())
             .nest_service("/dist", ServeDir::new("dist"));

@@ -2,7 +2,7 @@
 {% when firehose::Stream::Status with (stream) %}
   {% let status = stream.status.to_string() %}
   <a
-    href="{{ crate::controllers::streams::Member::path(status.as_str()) }}"
+    href="{{ crate::web::streams::Member::path(status.as_str()) }}"
     class="text-2xl break-words no-underline"
   >
     <div class="flex flex-row md:flex-col md:content-center justify-between md:justify-center border-2 rounded-lg p-3">
@@ -14,7 +14,7 @@
 
 {% when firehose::Stream::Custom with (stream) %}
   <a
-    href="{{ crate::controllers::streams::Member::path_uuid(stream.stream.id) }}"
+    href="{{ crate::web::streams::Member::path_uuid(stream.stream.id) }}"
     class="text-2xl break-words no-underline"
   >
     <div class="flex flex-row md:flex-col md:content-center justify-between md:justify-center border-2 rounded-lg p-3">

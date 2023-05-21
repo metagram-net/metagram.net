@@ -17,7 +17,7 @@
     <script type="text/javascript" src="/dist/js/app.js" defer></script>
     <script type="text/javascript" src="/dist/js/firehose.js" defer></script>
 
-    <link rel="manifest" href="{{ crate::controllers::firehose::Manifest.to_string() }}" />
+    <link rel="manifest" href="{{ crate::web::firehose::Manifest.to_string() }}" />
 
     {% block head %}{% endblock %}
   </head>
@@ -34,7 +34,7 @@
           <div class="flex justify-between">
             <span>
               <a
-                href="{{ crate::controllers::firehose::Root.to_string() }}"
+                href="{{ crate::web::firehose::Root.to_string() }}"
                 class="no-underline text-xl mx-2 md:px-3 py-2 w-auto"
               >
                 Firehose
@@ -64,22 +64,22 @@
           {% endmacro %}
 
           <ul id="nav-menu" class="js-hidden md:flex flex-col items-stretch space-y-2">
-            <li>{% call link("New", crate::controllers::drops::New.to_string()) %}</li>
-            <li>{% call link("Streams", crate::controllers::streams::Collection.to_string()) %}</li>
-            <li>{% call link("Tags", crate::controllers::tags::Collection.to_string()) %}</li>
-            <li>{% call link("Hydrants", crate::controllers::hydrants::Collection.to_string()) %}</li>
+            <li>{% call link("New", crate::web::drops::New.to_string()) %}</li>
+            <li>{% call link("Streams", crate::web::streams::Collection.to_string()) %}</li>
+            <li>{% call link("Tags", crate::web::tags::Collection.to_string()) %}</li>
+            <li>{% call link("Hydrants", crate::web::hydrants::Collection.to_string()) %}</li>
 
             <div class="w-full border border-gray-300 dark:border-gray-700"></div>
 
-            <li>{% call link("About Firehose", crate::controllers::firehose::About.to_string()) %}</li>
+            <li>{% call link("About Firehose", crate::web::firehose::About.to_string()) %}</li>
             {# TODO: settings #}
-            <li>{% call link("Metagram", crate::controllers::home::Root.to_string()) %}</li>
+            <li>{% call link("Metagram", crate::web::home::Root.to_string()) %}</li>
 
             <li>
               <div class="mx-2 px-3 py-2 w-auto">
                 {% match user %}
                 {% when Some(user) %}
-                <form method="POST" action="{{ crate::controllers::auth::Logout.to_string() }}">
+                <form method="POST" action="{{ crate::web::auth::Logout.to_string() }}">
                   <input
                     type="hidden"
                     name="authenticity_token"
@@ -88,7 +88,7 @@
                   <button type="submit">Log out</button>
                 </form>
                 {% when None %}
-                <a href="{{ crate::controllers::auth::Login.to_string() }}">Log in</a>
+                <a href="{{ crate::web::auth::Login.to_string() }}">Log in</a>
                 {% endmatch %}
               </div>
             </li>

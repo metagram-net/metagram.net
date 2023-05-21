@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::hydrants::Collection.to_string() }}"
+  action="{{ crate::web::hydrants::Collection.to_string() }}"
 >
   {% call form::errors("Hydrant", hydrant.errors) %}
 

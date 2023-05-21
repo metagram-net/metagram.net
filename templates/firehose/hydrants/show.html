@@ -13,5 +13,5 @@
 
   <p>Active: {{ hydrant.hydrant.active|yes_no }}</p>
 
-  <a href="{{ crate::controllers::hydrants::Edit::path(hydrant.hydrant.id) }}">Edit</a>
+  <a href="{{ crate::web::hydrants::Edit::path(hydrant.hydrant.id) }}">Edit</a>
 {% endblock %}

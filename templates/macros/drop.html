@@ -1,7 +1,7 @@
 {% macro action(drop_id, status, text) %}
   <form
     method="POST"
-    action="{{ crate::controllers::drops::Move::path(drop.id) }}"
+    action="{{ crate::web::drops::Move::path(drop.id) }}"
     class="inline-block",
   >
     <div>

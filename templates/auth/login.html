@@ -3,7 +3,7 @@
 {% block main %}
 <h1>Log in to Firehose</h1>
 
-<form method="POST" action="{{ crate::controllers::auth::Login.to_string() }}">
+<form method="POST" action="{{ crate::web::auth::Login.to_string() }}">
   <input
     type="hidden"
     name="authenticity_token"

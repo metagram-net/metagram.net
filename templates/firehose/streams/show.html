@@ -14,7 +14,7 @@
       {% endfor %}
     </ul>
 
-    <a href="{{ crate::controllers::streams::Edit::path(stream.stream.id) }}">Edit</a>
+    <a href="{{ crate::web::streams::Edit::path(stream.stream.id) }}">Edit</a>
   {% endmatch %}
 
   {% if drops.is_empty() %}
@@ -22,7 +22,7 @@
     <p>
       If you're new to Firehose, welcome! Find something you've been meaning to read,
       watch, or listen to and
-      <a href="{{ crate::controllers::drops::New.to_string() }}">add it</a>.
+      <a href="{{ crate::web::drops::New.to_string() }}">add it</a>.
     </p>
     <p>If you really did actually make it to the end... congratulations?</p>
     <p></p>

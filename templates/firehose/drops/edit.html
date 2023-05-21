@@ -6,7 +6,7 @@
 
 <form
   method="POST"
-  action="{{ crate::controllers::drops::Member::path(id) }}"
+  action="{{ crate::web::drops::Member::path(id) }}"
 >
   {% call form::errors("Drop", drop.errors) %}
 
