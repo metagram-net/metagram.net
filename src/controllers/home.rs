@@ -1,10 +1,19 @@
 use askama::Template;
+use axum::Router;
 use axum::{response::IntoResponse, Json};
-use axum_extra::routing::TypedPath;
+use axum_extra::routing::{RouterExt, TypedPath};
 use serde::{Deserialize, Serialize};
 
 use crate::models::User;
-use crate::{Context, Session};
+use crate::{AppState, Context, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(index)
+        .typed_get(about)
+        .typed_get(licenses)
+        .typed_get(health_check)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/")]

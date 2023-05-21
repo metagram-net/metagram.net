@@ -3,12 +3,25 @@ use axum::{
     extract::{Form, Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect, Response},
+    Router,
 };
-use axum_extra::{extract::PrivateCookieJar, routing::TypedPath};
+use axum_extra::{
+    extract::PrivateCookieJar,
+    routing::{RouterExt, TypedPath},
+};
 use serde::Deserialize;
 
 use crate::{auth, models};
-use crate::{AppError, Context, PgConn, Session};
+use crate::{AppError, AppState, Context, PgConn, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(login)
+        .typed_post(login_form)
+        .typed_post(logout)
+        .typed_get(authenticate)
+        .typed_head(authenticate_head)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/auth/login")]

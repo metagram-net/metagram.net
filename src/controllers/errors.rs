@@ -1,8 +1,14 @@
-use axum::response::Response;
-use axum_extra::routing::TypedPath;
+use axum::{response::Response, Router};
+use axum_extra::routing::{RouterExt, TypedPath};
 use serde::Deserialize;
 
-use crate::{AppError, Context, Session};
+use crate::{AppError, AppState, Context, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(internal_server_error)
+        .typed_get(unprocessable_entity)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/whoops/500")]

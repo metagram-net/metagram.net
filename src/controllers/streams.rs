@@ -1,6 +1,8 @@
 use askama::Template;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
+use axum::Router;
+use axum_extra::routing::RouterExt;
 use axum_extra::{extract::Form, routing::TypedPath};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -9,7 +11,17 @@ use crate::filters;
 use crate::firehose;
 use crate::models::{DropStatus, User};
 use crate::view_models::{tag_options, TagOption};
-use crate::{Context, PgConn, Session};
+use crate::{AppState, Context, PgConn, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(index)
+        .typed_get(new)
+        .typed_post(create)
+        .typed_get(show)
+        .typed_get(edit)
+        .typed_post(update)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/streams")]

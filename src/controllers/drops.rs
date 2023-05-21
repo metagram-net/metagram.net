@@ -5,9 +5,12 @@ use axum::{
     extract::{Query, State},
     headers::{Header, Referer},
     response::{IntoResponse, Redirect, Response},
-    TypedHeader,
+    Router, TypedHeader,
 };
-use axum_extra::{extract::Form, routing::TypedPath};
+use axum_extra::{
+    extract::Form,
+    routing::{RouterExt, TypedPath},
+};
 use http::HeaderValue;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -22,6 +25,17 @@ use crate::{
     view_models::{tag_options, TagOption},
 };
 use crate::{AppState, BaseUrl, Context, PgConn, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(index)
+        .typed_get(new)
+        .typed_post(create)
+        .typed_get(show)
+        .typed_get(edit)
+        .typed_post(update)
+        .typed_post(r#move)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/drops")]

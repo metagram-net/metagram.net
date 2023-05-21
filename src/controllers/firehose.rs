@@ -1,13 +1,21 @@
 use askama::Template;
 use axum::headers::HeaderName;
 use axum::response::{IntoResponse, Redirect};
-use axum::Json;
-use axum_extra::routing::TypedPath;
+use axum::{Json, Router};
+use axum_extra::routing::{RouterExt, TypedPath};
 use http::header;
 use serde::Deserialize;
 
 use crate::models::User;
-use crate::{Context, Session};
+use crate::{AppState, Context, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(index)
+        .typed_get(about)
+        .typed_get(manifest)
+        .typed_get(service_worker)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose")]

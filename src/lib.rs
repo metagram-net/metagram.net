@@ -6,7 +6,6 @@ use axum::{
     Router,
 };
 use axum_csrf::{CsrfConfig, CsrfToken};
-use axum_extra::routing::RouterExt;
 use derivative::Derivative;
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -108,49 +107,8 @@ impl Server {
                 .with_key(Some(axum_csrf::Key::from(config.cookie_key.master()))),
         };
 
-        // TODO: Extract this router back into a routes.rs file
         let router = Router::new()
-            .typed_get(controllers::home::index)
-            .typed_get(controllers::home::about)
-            .typed_get(controllers::home::licenses)
-            .typed_get(controllers::home::health_check)
-            .typed_get(controllers::auth::login)
-            .typed_post(controllers::auth::login_form)
-            .typed_post(controllers::auth::logout)
-            .typed_get(controllers::auth::authenticate)
-            .typed_head(controllers::auth::authenticate_head)
-            .typed_get(controllers::firehose::index)
-            .typed_get(controllers::firehose::about)
-            .typed_get(controllers::firehose::manifest)
-            .typed_get(controllers::firehose::service_worker)
-            .typed_get(controllers::drops::index)
-            .typed_get(controllers::drops::new)
-            .typed_post(controllers::drops::create)
-            .typed_get(controllers::drops::show)
-            .typed_get(controllers::drops::edit)
-            .typed_post(controllers::drops::update)
-            .typed_post(controllers::drops::r#move)
-            .typed_get(controllers::hydrants::index)
-            .typed_get(controllers::hydrants::new)
-            .typed_post(controllers::hydrants::create)
-            .typed_get(controllers::hydrants::show)
-            .typed_get(controllers::hydrants::edit)
-            .typed_post(controllers::hydrants::update)
-            .typed_post(controllers::hydrants::delete)
-            .typed_get(controllers::streams::index)
-            .typed_get(controllers::streams::new)
-            .typed_post(controllers::streams::create)
-            .typed_get(controllers::streams::show)
-            .typed_get(controllers::streams::edit)
-            .typed_post(controllers::streams::update)
-            .typed_get(controllers::tags::index)
-            .typed_get(controllers::tags::new)
-            .typed_post(controllers::tags::create)
-            .typed_get(controllers::tags::show)
-            .typed_get(controllers::tags::edit)
-            .typed_post(controllers::tags::update)
-            .typed_get(controllers::errors::internal_server_error)
-            .typed_get(controllers::errors::unprocessable_entity)
+            .merge(controllers::router())
             .fallback(not_found)
             .with_state(state.clone())
             .nest_service("/dist", ServeDir::new("dist"));

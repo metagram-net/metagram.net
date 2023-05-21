@@ -2,8 +2,9 @@ use askama::Template;
 use axum::{
     extract::Form,
     response::{IntoResponse, Redirect, Response},
+    Router,
 };
-use axum_extra::routing::TypedPath;
+use axum_extra::routing::{RouterExt, TypedPath};
 use serde::Deserialize;
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -11,7 +12,17 @@ use uuid::Uuid;
 use crate::filters;
 use crate::firehose::{self, DropStatus};
 use crate::models::{Tag, User};
-use crate::{Context, PgConn, Session};
+use crate::{AppState, Context, PgConn, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(index)
+        .typed_get(new)
+        .typed_post(create)
+        .typed_get(show)
+        .typed_get(edit)
+        .typed_post(update)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/tags")]

@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use askama::Template;
 use axum::response::{IntoResponse, Redirect, Response};
+use axum::Router;
+use axum_extra::routing::RouterExt;
 use axum_extra::{extract::Form, routing::TypedPath};
 use http::StatusCode;
 use serde::{Deserialize, Deserializer};
@@ -13,7 +15,18 @@ use crate::{
     filters,
     view_models::{tag_options, TagOption},
 };
-use crate::{Context, PgConn, Session};
+use crate::{AppState, Context, PgConn, Session};
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .typed_get(index)
+        .typed_get(new)
+        .typed_post(create)
+        .typed_get(show)
+        .typed_get(edit)
+        .typed_post(update)
+        .typed_post(delete)
+}
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/hydrants")]
