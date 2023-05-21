@@ -1397,10 +1397,12 @@ mod tests {
     #[tokio::test]
     async fn minimal_drop() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
 
         let created = create_drop(
-            &mut conn,
+            &mut tx,
             &user,
             None,
             "https://example.com/lorem-ipsum".to_string(),
@@ -1411,21 +1413,23 @@ mod tests {
         .await
         .unwrap();
 
-        let found = find_drop(&mut conn, &user, created.drop.id).await.unwrap();
+        let found = find_drop(&mut tx, &user, created.drop.id).await.unwrap();
         assert_eq!(found, created);
     }
 
     #[tokio::test]
     async fn maximal_drop() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let coffee = create_tag(&mut conn, &user, "Coffee", "#c0ffee")
+        let user = test_user(&mut tx).await.unwrap();
+
+        let coffee = create_tag(&mut tx, &user, "Coffee", "#c0ffee")
             .await
             .unwrap();
 
         let created = create_drop(
-            &mut conn,
+            &mut tx,
             &user,
             Some("Lorem Ipsum".to_string()),
             "https://example.com/lorem-ipsum".to_string(),
@@ -1442,7 +1446,7 @@ mod tests {
         .await
         .unwrap();
 
-        let found = find_drop(&mut conn, &user, created.drop.id).await.unwrap();
+        let found = find_drop(&mut tx, &user, created.drop.id).await.unwrap();
         assert_eq!(found, created);
 
         let tag_names: Vec<&str> = found.tags.iter().map(|t| &t.name[..]).collect();
@@ -1452,10 +1456,12 @@ mod tests {
     #[tokio::test]
     async fn update_drop_fields() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
 
         let drop = create_drop(
-            &mut conn,
+            &mut tx,
             &user,
             None,
             "https://example.com/lorem-ipsum".to_string(),
@@ -1472,11 +1478,11 @@ mod tests {
         };
         let tags = None;
 
-        let updated = update_drop(&mut conn, &user, &drop.drop, fields, tags)
+        let updated = update_drop(&mut tx, &user, &drop.drop, fields, tags)
             .await
             .unwrap();
 
-        let found = find_drop(&mut conn, &user, drop.drop.id).await.unwrap();
+        let found = find_drop(&mut tx, &user, drop.drop.id).await.unwrap();
         assert_eq!(found, updated);
 
         assert_eq!(found.drop.title, Some("Dolor Sit".to_string()));
@@ -1486,14 +1492,16 @@ mod tests {
     #[tokio::test]
     async fn update_drop_tags() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let coffee = create_tag(&mut conn, &user, "Coffee", "#c0ffee")
+        let user = test_user(&mut tx).await.unwrap();
+
+        let coffee = create_tag(&mut tx, &user, "Coffee", "#c0ffee")
             .await
             .unwrap();
 
         let drop = create_drop(
-            &mut conn,
+            &mut tx,
             &user,
             None,
             "https://example.com/lorem-ipsum".to_string(),
@@ -1510,11 +1518,11 @@ mod tests {
             color: models::Tag::DEFAULT_COLOR.to_string(),
         }]);
 
-        let updated = update_drop(&mut conn, &user, &drop.drop, fields, tags)
+        let updated = update_drop(&mut tx, &user, &drop.drop, fields, tags)
             .await
             .unwrap();
 
-        let found = find_drop(&mut conn, &user, drop.drop.id).await.unwrap();
+        let found = find_drop(&mut tx, &user, drop.drop.id).await.unwrap();
 
         assert_eq!(found.drop, updated.drop);
 
@@ -1525,12 +1533,14 @@ mod tests {
     #[tokio::test]
     async fn change_drop_status() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
 
         let now = chrono::Utc::now();
 
         let drop = create_drop(
-            &mut conn,
+            &mut tx,
             &user,
             None,
             "https://example.com/lorem-ipsum".to_string(),
@@ -1544,7 +1554,7 @@ mod tests {
         let drop_id = drop.drop.id;
 
         let moved = move_drop(
-            &mut conn,
+            &mut tx,
             drop,
             DropStatus::Read,
             now + chrono::Duration::minutes(5),
@@ -1552,7 +1562,7 @@ mod tests {
         .await
         .unwrap();
 
-        let found = find_drop(&mut conn, &user, drop_id).await.unwrap();
+        let found = find_drop(&mut tx, &user, drop_id).await.unwrap();
         assert_eq!(found, moved);
 
         // DB timestamps have microsecond precision, so truncate the local timestamp to the same
@@ -1568,14 +1578,16 @@ mod tests {
     #[tokio::test]
     async fn list_drops_by_status() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
         let now = chrono::Utc::now();
 
         let mut unread = Vec::new();
         let mut read = Vec::new();
         for i in 0..10 {
             let mut drop = create_drop(
-                &mut conn,
+                &mut tx,
                 &user,
                 None,
                 format!("https://example.com/filtering/{}", i),
@@ -1587,7 +1599,7 @@ mod tests {
             .unwrap();
 
             if i % 2 == 0 {
-                drop = move_drop(&mut conn, drop, DropStatus::Read, now)
+                drop = move_drop(&mut tx, drop, DropStatus::Read, now)
                     .await
                     .unwrap();
                 read.push(drop);
@@ -1597,7 +1609,7 @@ mod tests {
         }
 
         let found_unread = list_drops(
-            &mut conn,
+            &mut tx,
             &user,
             DropFilters {
                 status: Some(DropStatus::Unread),
@@ -1612,7 +1624,9 @@ mod tests {
     #[tokio::test]
     async fn list_drops_by_tags() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
         let now = chrono::Utc::now();
 
         // Set up state that looks like this:
@@ -1623,7 +1637,7 @@ mod tests {
 
         let mut tags = Vec::new();
         for i in 0..3 {
-            let tag = create_tag(&mut conn, &user, &i.to_string(), models::Tag::DEFAULT_COLOR)
+            let tag = create_tag(&mut tx, &user, &i.to_string(), models::Tag::DEFAULT_COLOR)
                 .await
                 .unwrap();
 
@@ -1639,7 +1653,7 @@ mod tests {
                 .collect();
 
             let drop = create_drop(
-                &mut conn,
+                &mut tx,
                 &user,
                 None,
                 format!("https://example.com/filtering/{}", i),
@@ -1662,7 +1676,7 @@ mod tests {
         // T2: {        D2}
         for i in 0..3 {
             let found = list_drops(
-                &mut conn,
+                &mut tx,
                 &user,
                 DropFilters {
                     tags: Some(vec![tags[i].clone()]),
@@ -1682,6 +1696,8 @@ mod tests {
     #[tokio::test]
     async fn update_tag_fields() {
         let mut conn = test_conn().await.unwrap();
+        let mut conn = conn.begin().await.unwrap();
+
         let user = test_user(&mut conn).await.unwrap();
 
         let tag = create_tag(&mut conn, &user, "Work", "#0000ff")
@@ -1707,9 +1723,11 @@ mod tests {
     #[tokio::test]
     async fn empty_stream() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let res = create_stream(&mut conn, &user, "Empty", &[]).await;
+        let user = test_user(&mut tx).await.unwrap();
+
+        let res = create_stream(&mut tx, &user, "Empty", &[]).await;
         let err = res.unwrap_err();
         assert!(matches!(err, Error::Stream(StreamError::NoTags)));
     }
@@ -1717,21 +1735,19 @@ mod tests {
     #[tokio::test]
     async fn stream_with_tags() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+        let user = test_user(&mut tx).await.unwrap();
+
+        let red = create_tag(&mut tx, &user, "Red", "#ff0000").await.unwrap();
+
+        let blue = create_tag(&mut tx, &user, "Blue", "#0000ff").await.unwrap();
+
+        let created = create_stream(&mut tx, &user, "Colors", &vec![red, blue])
             .await
             .unwrap();
 
-        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
-            .await
-            .unwrap();
-
-        let created = create_stream(&mut conn, &user, "Colors", &vec![red, blue])
-            .await
-            .unwrap();
-
-        let found = find_stream(&mut conn, &user, created.stream.id)
+        let found = find_stream(&mut tx, &user, created.stream.id)
             .await
             .unwrap();
         assert_eq!(created, found);
@@ -1743,17 +1759,17 @@ mod tests {
     #[tokio::test]
     async fn change_stream_fields() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+        let user = test_user(&mut tx).await.unwrap();
+
+        let red = create_tag(&mut tx, &user, "Red", "#ff0000").await.unwrap();
+
+        let stream = create_stream(&mut tx, &user, "Oops!", &[red])
             .await
             .unwrap();
 
-        let stream = create_stream(&mut conn, &user, "Oops!", &[red])
-            .await
-            .unwrap();
-
-        let green = create_tag(&mut conn, &user, "Green", "#00ff00")
+        let green = create_tag(&mut tx, &user, "Green", "#00ff00")
             .await
             .unwrap();
 
@@ -1762,13 +1778,11 @@ mod tests {
             tag_ids: Some(vec![green.id]),
         };
 
-        let updated = update_stream(&mut conn, &user, &stream.stream, fields)
+        let updated = update_stream(&mut tx, &user, &stream.stream, fields)
             .await
             .unwrap();
 
-        let found = find_stream(&mut conn, &user, stream.stream.id)
-            .await
-            .unwrap();
+        let found = find_stream(&mut tx, &user, stream.stream.id).await.unwrap();
         assert_eq!(updated, found);
 
         assert_eq!(found.stream.name, "Yay!".to_string());
@@ -1780,9 +1794,11 @@ mod tests {
     #[tokio::test]
     async fn list_streams_default() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let found = list_streams(&mut conn, &user).await.unwrap();
+        let user = test_user(&mut tx).await.unwrap();
+
+        let found = list_streams(&mut tx, &user).await.unwrap();
 
         let expected = vec![
             Stream::Status(StatusStream::new(DropStatus::Unread)),
@@ -1796,25 +1812,23 @@ mod tests {
     #[tokio::test]
     async fn list_streams_custom() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
+        let user = test_user(&mut tx).await.unwrap();
+
+        let red = create_tag(&mut tx, &user, "Red", "#ff0000").await.unwrap();
+
+        let blue = create_tag(&mut tx, &user, "Blue", "#0000ff").await.unwrap();
+
+        let colors = create_stream(&mut tx, &user, "Colors", &vec![red, blue.clone()])
             .await
             .unwrap();
 
-        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
+        let only_blue = create_stream(&mut tx, &user, "Only Blue", &[blue.clone()])
             .await
             .unwrap();
 
-        let colors = create_stream(&mut conn, &user, "Colors", &vec![red, blue.clone()])
-            .await
-            .unwrap();
-
-        let only_blue = create_stream(&mut conn, &user, "Only Blue", &[blue.clone()])
-            .await
-            .unwrap();
-
-        let found = list_streams(&mut conn, &user).await.unwrap();
+        let found = list_streams(&mut tx, &user).await.unwrap();
 
         let expected = vec![
             Stream::Status(StatusStream::new(DropStatus::Unread)),
@@ -1829,10 +1843,12 @@ mod tests {
     #[tokio::test]
     async fn simple_hydrant() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
 
         let created = create_hydrant(
-            &mut conn,
+            &mut tx,
             &user,
             "Simple",
             "https://example.com/simple",
@@ -1842,7 +1858,7 @@ mod tests {
         .await
         .unwrap();
 
-        let found = find_hydrant(&mut conn, &user, created.hydrant.id)
+        let found = find_hydrant(&mut tx, &user, created.hydrant.id)
             .await
             .unwrap();
         assert_eq!(created, found);
@@ -1856,14 +1872,14 @@ mod tests {
     #[tokio::test]
     async fn tagged_hydrant() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
-            .await
-            .unwrap();
+        let user = test_user(&mut tx).await.unwrap();
+
+        let red = create_tag(&mut tx, &user, "Red", "#ff0000").await.unwrap();
 
         let created = create_hydrant(
-            &mut conn,
+            &mut tx,
             &user,
             "Painted",
             "https://example.com/painted",
@@ -1879,7 +1895,7 @@ mod tests {
         .await
         .unwrap();
 
-        let found = find_hydrant(&mut conn, &user, created.hydrant.id)
+        let found = find_hydrant(&mut tx, &user, created.hydrant.id)
             .await
             .unwrap();
         assert_eq!(created, found);
@@ -1891,14 +1907,16 @@ mod tests {
     #[tokio::test]
     async fn change_hydrant_fields() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let black = create_tag(&mut conn, &user, "Black", "#ff0000")
+        let user = test_user(&mut tx).await.unwrap();
+
+        let black = create_tag(&mut tx, &user, "Black", "#ff0000")
             .await
             .unwrap();
 
         let hydrant = create_hydrant(
-            &mut conn,
+            &mut tx,
             &user,
             "The Rolling Stones",
             "https://example.com/painted",
@@ -1908,9 +1926,7 @@ mod tests {
         .await
         .unwrap();
 
-        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
-            .await
-            .unwrap();
+        let blue = create_tag(&mut tx, &user, "Blue", "#0000ff").await.unwrap();
 
         let fields = HydrantFields {
             name: Some("Eiffel 65".to_string()),
@@ -1919,11 +1935,11 @@ mod tests {
             tags: Some(vec![TagSelector::Find { id: blue.id }]),
         };
 
-        let updated = update_hydrant(&mut conn, &user, &hydrant.hydrant, fields)
+        let updated = update_hydrant(&mut tx, &user, &hydrant.hydrant, fields)
             .await
             .unwrap();
 
-        let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+        let found = find_hydrant(&mut tx, &user, hydrant.hydrant.id)
             .await
             .unwrap();
         assert_eq!(updated, found);
@@ -1939,27 +1955,27 @@ mod tests {
     #[tokio::test]
     async fn list_hydrants_empty() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let found = list_hydrants(&mut conn, &user).await.unwrap();
+        let user = test_user(&mut tx).await.unwrap();
+
+        let found = list_hydrants(&mut tx, &user).await.unwrap();
         assert_eq!(found, vec![]);
     }
 
     #[tokio::test]
     async fn list_hydrants_custom() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
 
-        let red = create_tag(&mut conn, &user, "Red", "#ff0000")
-            .await
-            .unwrap();
+        let user = test_user(&mut tx).await.unwrap();
 
-        let blue = create_tag(&mut conn, &user, "Blue", "#0000ff")
-            .await
-            .unwrap();
+        let red = create_tag(&mut tx, &user, "Red", "#ff0000").await.unwrap();
+
+        let blue = create_tag(&mut tx, &user, "Blue", "#0000ff").await.unwrap();
 
         let painted = create_hydrant(
-            &mut conn,
+            &mut tx,
             &user,
             "Painted",
             "https://example.com/painted",
@@ -1973,7 +1989,7 @@ mod tests {
         .unwrap();
 
         let only_blue = create_hydrant(
-            &mut conn,
+            &mut tx,
             &user,
             "Only Blue",
             "https://example.com/blue",
@@ -1983,7 +1999,7 @@ mod tests {
         .await
         .unwrap();
 
-        let found = list_hydrants(&mut conn, &user).await.unwrap();
+        let found = list_hydrants(&mut tx, &user).await.unwrap();
 
         let expected = vec![only_blue, painted];
         assert_eq!(found, expected);
@@ -1992,7 +2008,9 @@ mod tests {
     #[tokio::test]
     async fn fetch_empty_rss() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
 
         let mut url = lorem_rss().unwrap();
         url = url.join("feed").unwrap();
@@ -2001,15 +2019,15 @@ mod tests {
         let now = chrono::Utc::now();
         let client = reqwest::Client::new();
 
-        let hydrant = create_hydrant(&mut conn, &user, "Empty", url.as_ref(), true, None)
+        let hydrant = create_hydrant(&mut tx, &user, "Empty", url.as_ref(), true, None)
             .await
             .unwrap();
 
-        Hydrant::fetch(&mut conn, &client, hydrant.hydrant.id, now)
+        Hydrant::fetch(&mut tx, &client, hydrant.hydrant.id, now)
             .await
             .unwrap();
 
-        let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+        let found = find_hydrant(&mut tx, &user, hydrant.hydrant.id)
             .await
             .unwrap();
 
@@ -2024,7 +2042,9 @@ mod tests {
     #[tokio::test]
     async fn fetch_small_rss() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
 
         let mut url = lorem_rss().unwrap();
         url = url.join("feed").unwrap();
@@ -2034,22 +2054,15 @@ mod tests {
 
         let client = reqwest::Client::new();
 
-        let hydrant = create_hydrant(
-            &mut conn,
-            &user,
-            "10 items/minute",
-            url.as_ref(),
-            true,
-            None,
-        )
-        .await
-        .unwrap();
-
-        Hydrant::fetch(&mut conn, &client, hydrant.hydrant.id, now)
+        let hydrant = create_hydrant(&mut tx, &user, "10 items/minute", url.as_ref(), true, None)
             .await
             .unwrap();
 
-        let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+        Hydrant::fetch(&mut tx, &client, hydrant.hydrant.id, now)
+            .await
+            .unwrap();
+
+        let found = find_hydrant(&mut tx, &user, hydrant.hydrant.id)
             .await
             .unwrap();
 
@@ -2061,7 +2074,7 @@ mod tests {
         );
 
         let drops = list_drops(
-            &mut conn,
+            &mut tx,
             &user,
             DropFilters {
                 status: Some(DropStatus::Unread),
@@ -2077,7 +2090,9 @@ mod tests {
     #[tokio::test]
     async fn fetch_skips_seen_items() {
         let mut conn = test_conn().await.unwrap();
-        let user = test_user(&mut conn).await.unwrap();
+        let mut tx = conn.begin().await.unwrap();
+
+        let user = test_user(&mut tx).await.unwrap();
 
         // Pick a long interval (once per month) to make finding a new item less likely.
         let mut url = lorem_rss().unwrap();
@@ -2088,18 +2103,18 @@ mod tests {
 
         let client = reqwest::Client::new();
 
-        let hydrant = create_hydrant(&mut conn, &user, "5 items/month", url.as_ref(), true, None)
+        let hydrant = create_hydrant(&mut tx, &user, "5 items/month", url.as_ref(), true, None)
             .await
             .unwrap();
 
         for _ in 0..2 {
             let now = now + chrono::Duration::minutes(1);
 
-            Hydrant::fetch(&mut conn, &client, hydrant.hydrant.id, now)
+            Hydrant::fetch(&mut tx, &client, hydrant.hydrant.id, now)
                 .await
                 .unwrap();
 
-            let found = find_hydrant(&mut conn, &user, hydrant.hydrant.id)
+            let found = find_hydrant(&mut tx, &user, hydrant.hydrant.id)
                 .await
                 .unwrap();
 
@@ -2111,7 +2126,7 @@ mod tests {
             );
 
             let drops = list_drops(
-                &mut conn,
+                &mut tx,
                 &user,
                 DropFilters {
                     status: Some(DropStatus::Unread),
