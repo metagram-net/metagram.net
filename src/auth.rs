@@ -61,6 +61,10 @@ where
         parts: &mut http::request::Parts,
         state: &S,
     ) -> Result<Self, Self::Rejection> {
+        if let Some(session) = parts.extensions.get::<Self>() {
+            return Ok(session.clone());
+        }
+
         let auth = Auth::from_ref(state);
         let cookies = match PrivateCookieJar::from_request_parts(parts, state).await {
             Ok(cookies) => cookies,
@@ -69,13 +73,19 @@ where
 
         let mut db = PgConn::from_request_parts(parts, state).await?.0;
 
-        match find_session(&mut db, &auth, cookies).await {
-            Ok(session) => Ok(session),
+        let session = find_session(&mut db, &auth, cookies).await;
+
+        let session = match session {
+            Ok(session) => session,
             Err(err) => {
                 tracing::error!({ ?err }, "no active session");
-                Err(Redirect::to(&crate::web::auth::Login.to_string()).into_response())
+                // TODO: return Err(AppError::LoggedOut) and redirect in show
+                return Err(Redirect::to(&crate::web::auth::Login.to_string()).into_response());
             }
-        }
+        };
+
+        parts.extensions.insert(session.clone());
+        Ok(session)
     }
 }
 

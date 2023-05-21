@@ -263,6 +263,10 @@ where
         parts: &mut http::request::Parts,
         state: &S,
     ) -> Result<Self, Self::Rejection> {
+        if let Some(ctx) = parts.extensions.get::<Self>() {
+            return Ok(ctx.clone());
+        }
+
         let csrf_token = CsrfToken::from_request_parts(parts, state)
             .await
             .expect("layer: CsrfToken");
@@ -273,10 +277,13 @@ where
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        Ok(Self {
+        let ctx = Self {
             csrf_token,
             request_id,
-        })
+        };
+
+        parts.extensions.insert(ctx.clone());
+        Ok(ctx)
     }
 }
 
