@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     middleware,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
     Router,
 };
 use http::StatusCode;
@@ -55,6 +55,12 @@ pub enum Error {
     #[error("authenticity token mismatch")]
     CsrfMismatch { cookie: String, form: String },
 
+    #[error("not logged in")]
+    NotLoggedIn,
+
+    #[error("user not found")]
+    UserNotFound { stytch_user_id: String },
+
     #[error(transparent)]
     Stytch(#[from] stytch::Error),
 
@@ -89,18 +95,25 @@ impl Error {
     pub fn render(&self, context: Context, session: Option<Session>) -> Response {
         let user = session.map(|s| s.user);
 
+        fn wrap(res: impl IntoResponse) -> Response {
+            res.into_response()
+        }
+
         use Error::*;
         match self {
-            CsrfMismatch { .. } => (
+            CsrfMismatch { .. } => wrap((
                 StatusCode::UNPROCESSABLE_ENTITY,
                 UnprocessableEntity { context, user },
-            )
-                .into_response(),
-            Stytch(_) | Boxed(_) => (
+            )),
+
+            NotLoggedIn => wrap(Redirect::to(&auth::Login.to_string())),
+
+            UserNotFound { .. } => wrap(Redirect::to(&auth::Login.to_string())),
+
+            Stytch(_) | Boxed(_) => wrap((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 InternalServerError { context, user },
-            )
-                .into_response(),
+            )),
         }
     }
 }

@@ -1,8 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Form, Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Redirect},
     Router,
 };
 use axum_extra::{
@@ -103,20 +102,17 @@ type AuthenticateResponse = (PrivateCookieJar, Redirect);
 
 pub async fn authenticate(
     _: Authenticate,
-    context: Context,
-    session: Option<Session>,
     cookies: PrivateCookieJar,
     PgConn(mut db): PgConn,
     State(auth): State<auth::Auth>,
     Query(query): Query<AuthenticateQuery>,
-) -> Result<AuthenticateResponse, Response> {
-    let res = match auth.authenticate_magic_link(query.token).await {
-        Ok(res) => res,
-        Err(err) => return Err(context.error(session, err.into())),
-    };
-    tracing::info!("Successfully authenticated token for user {}", res.user_id);
+) -> super::Result<AuthenticateResponse> {
+    let res = auth.authenticate_magic_link(query.token).await?;
+    let stytch_user_id = res.user_id.clone();
 
-    match auth::find_user_stytch(&mut db, res.user_id.clone()).await {
+    tracing::info!({ ?stytch_user_id }, "authenticated Stytch session");
+
+    match auth::find_user_stytch(&mut db, stytch_user_id.clone()).await {
         Ok(_) => {
             let cookie = auth::session_cookie(res.session_token);
 
@@ -127,8 +123,8 @@ pub async fn authenticate(
             Ok((cookies.add(cookie), redirect))
         }
         Err(err) => {
-            tracing::error!({ stytch_user_id = ?res.user_id, ?err }, "find user by Stytch ID");
-            Err((StatusCode::BAD_REQUEST, Redirect::to(&Login.to_string())).into_response())
+            tracing::error!({ ?stytch_user_id, ?err }, "find user by Stytch ID");
+            Err(super::Error::UserNotFound { stytch_user_id })
         }
     }
 }
