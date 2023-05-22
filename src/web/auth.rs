@@ -11,7 +11,7 @@ use axum_extra::{
 use serde::Deserialize;
 
 use crate::{auth, models};
-use crate::{AppError, AppState, Context, PgConn, Session};
+use crate::{AppState, Context, PgConn, Session};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -151,27 +151,32 @@ pub async fn logout(
     cookies: PrivateCookieJar,
     State(auth): State<auth::Auth>,
     Form(form): Form<LogoutForm>,
-) -> impl IntoResponse {
+) -> super::Result<impl IntoResponse> {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(context.error(session, AppError::CsrfMismatch));
+        return Err(super::Error::CsrfMismatch {
+            cookie: context.csrf_token.authenticity_token(),
+            form: form.authenticity_token,
+        });
     }
 
     match auth::revoke_session(&auth, cookies).await {
         Ok(cookies) => {
             let session_id = session.map(|s| s.stytch.session_id);
-            tracing::info!({ ?session_id }, "successfully revoked session");
+            tracing::info!({ ?session_id }, "revoked session");
+
             Ok((cookies, Redirect::to("/")))
         }
         Err(err) => {
             let session_id = session.as_ref().map(|s| s.stytch.session_id.clone());
             tracing::error!({ ?session_id, ?err }, "could not revoke session");
+
             // Fail the logout request, which may be surprising.
             //
             // By clearing the cookie, the user's browser won't know the session token anymore. But
             // anyone who _had_ somehow obtained that token would be able to use it until the
             // session naturally expired. Clicking "Log out" again shouldn't be that much of an
             // issue in the rare (🤞) case that revocation fails.
-            Err(context.error(session, err.into()))
+            Err(err.into())
         }
     }
 }

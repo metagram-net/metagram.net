@@ -66,9 +66,9 @@ pub enum Error {
 
     #[error(transparent)]
     Boxed(#[from] axum::BoxError),
-    //
-    // #[error(transparent)]
-    // Anyhow(#[from] anyhow::Error),
+
+    #[error(transparent)]
+    Anyhow(#[from] anyhow::Error),
 }
 
 impl Error {
@@ -110,7 +110,7 @@ impl Error {
 
             UserNotFound { .. } => wrap(Redirect::to(&auth::Login.to_string())),
 
-            Stytch(_) | Boxed(_) => wrap((
+            Stytch(_) | Boxed(_) | Anyhow(_) => wrap((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 InternalServerError { context, user },
             )),
