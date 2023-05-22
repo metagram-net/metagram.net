@@ -1,6 +1,12 @@
-use axum::Router;
+use askama::Template;
+use axum::{
+    middleware,
+    response::{IntoResponse, Response},
+    Router,
+};
+use http::StatusCode;
 
-use crate::AppState;
+use crate::{auth::Session, AppState, Context, User};
 
 pub mod auth;
 pub mod drops;
@@ -11,7 +17,7 @@ pub mod hydrants;
 pub mod streams;
 pub mod tags;
 
-pub fn router() -> Router<AppState> {
+pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .merge(auth::router())
         .merge(drops::router())
@@ -21,4 +27,94 @@ pub fn router() -> Router<AppState> {
         .merge(hydrants::router())
         .merge(streams::router())
         .merge(tags::router())
+        .route_layer(middleware::map_response_with_state(state, show_app_error))
+}
+
+async fn show_app_error(
+    ctx: Context,
+    session: Option<Session>,
+    mut res: Response,
+) -> impl IntoResponse {
+    let web_error = res.extensions_mut().remove::<Error>();
+
+    if let Some(err) = web_error {
+        tracing::error!("{:?}", err);
+
+        return err.render(ctx, session);
+    }
+
+    res
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[non_exhaustive]
+#[allow(clippy::large_enum_variant)] // TODO: Box more
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("authenticity token mismatch")]
+    CsrfMismatch { cookie: String, form: String },
+
+    #[error(transparent)]
+    Stytch(#[from] stytch::Error),
+
+    #[error(transparent)]
+    Boxed(#[from] axum::BoxError),
+    //
+    // #[error(transparent)]
+    // Anyhow(#[from] anyhow::Error),
+}
+
+impl Error {
+    pub fn boxed(err: impl std::error::Error + Send + Sync + 'static) -> Self {
+        Error::Boxed(err.into())
+    }
+}
+
+// Create a fallback response to show in the rare case that something goes wrong in the
+// error mapper.
+//
+// Put the real error (self) in the response extensions.
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let mut res = StatusCode::INTERNAL_SERVER_ERROR.into_response();
+
+        res.extensions_mut().insert(self);
+
+        res
+    }
+}
+
+impl Error {
+    pub fn render(&self, context: Context, session: Option<Session>) -> Response {
+        let user = session.map(|s| s.user);
+
+        use Error::*;
+        match self {
+            CsrfMismatch { .. } => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                UnprocessableEntity { context, user },
+            )
+                .into_response(),
+            Stytch(_) | Boxed(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                InternalServerError { context, user },
+            )
+                .into_response(),
+        }
+    }
+}
+
+#[derive(Template)]
+#[template(path = "errors/422_unprocessable_entity.html")]
+struct UnprocessableEntity {
+    context: Context,
+    user: Option<User>,
+}
+
+#[derive(Template)]
+#[template(path = "errors/500_internal_server_error.html")]
+struct InternalServerError {
+    context: Context,
+    user: Option<User>,
 }

@@ -108,7 +108,7 @@ impl Server {
         };
 
         let router = Router::new()
-            .merge(web::router())
+            .merge(web::router(state.clone()))
             .fallback(not_found)
             .with_state(state.clone())
             .nest_service("/dist", ServeDir::new("dist"));

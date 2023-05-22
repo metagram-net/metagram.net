@@ -65,22 +65,23 @@ pub async fn login_form(
     _: Login,
     context: Context,
     session: Option<Session>,
-    State(auth): State<auth::Auth>,
+    State(state): State<AppState>,
     Form(form): Form<LoginForm>,
-) -> impl IntoResponse {
+) -> super::Result<impl IntoResponse> {
     if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(context.error(session, AppError::CsrfMismatch));
+        return Err(super::Error::CsrfMismatch {
+            cookie: context.csrf_token.authenticity_token(),
+            form: form.authenticity_token,
+        });
     }
 
-    let res = match auth
+    let res = state
+        .auth
         .send_magic_link(form.email.clone(), Authenticate.to_string())
-        .await
-    {
-        Ok(res) => res,
-        Err(err) => return Err(context.error(session, err.into())),
-    };
+        .await?;
 
     tracing::info!("Sent login link to user {}", res.user_id);
+
     Ok(LoginConfirmation {
         context,
         user: session.map(|s| s.user),
