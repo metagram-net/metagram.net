@@ -10,23 +10,23 @@ use crate::{auth::Session, AppState, Context, User};
 
 pub mod auth;
 pub mod drops;
-pub mod errors;
 pub mod firehose;
 pub mod home;
 pub mod hydrants;
 pub mod streams;
 pub mod tags;
+pub mod whoops;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .merge(auth::router())
         .merge(drops::router())
-        .merge(errors::router())
         .merge(firehose::router())
         .merge(home::router())
         .merge(hydrants::router())
         .merge(streams::router())
         .merge(tags::router())
+        .merge(whoops::router())
         .route_layer(middleware::map_response_with_state(state, show_app_error))
 }
 
