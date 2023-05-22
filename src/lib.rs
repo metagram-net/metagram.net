@@ -199,6 +199,17 @@ pub struct Context {
 }
 
 impl Context {
+    pub fn verify_csrf(&self, authenticity_token: &str) -> web::Result<()> {
+        self.csrf_token
+            .verify(authenticity_token)
+            .map_err(|_| web::Error::CsrfMismatch {
+                cookie: self.csrf_token.authenticity_token(),
+                form: authenticity_token.to_string(),
+            })
+    }
+}
+
+impl Context {
     fn error(self, session: Option<Session>, err: AppError) -> Response {
         tracing::error!("{:?}", err);
 

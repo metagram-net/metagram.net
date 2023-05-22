@@ -67,12 +67,7 @@ pub async fn login_form(
     State(state): State<AppState>,
     Form(form): Form<LoginForm>,
 ) -> super::Result<impl IntoResponse> {
-    if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(super::Error::CsrfMismatch {
-            cookie: context.csrf_token.authenticity_token(),
-            form: form.authenticity_token,
-        });
-    }
+    context.verify_csrf(&form.authenticity_token)?;
 
     let res = state
         .auth
@@ -152,12 +147,7 @@ pub async fn logout(
     State(auth): State<auth::Auth>,
     Form(form): Form<LogoutForm>,
 ) -> super::Result<impl IntoResponse> {
-    if context.csrf_token.verify(&form.authenticity_token).is_err() {
-        return Err(super::Error::CsrfMismatch {
-            cookie: context.csrf_token.authenticity_token(),
-            form: form.authenticity_token,
-        });
-    }
+    context.verify_csrf(&form.authenticity_token)?;
 
     match auth::revoke_session(&auth, cookies).await {
         Ok(cookies) => {
