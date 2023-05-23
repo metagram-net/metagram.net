@@ -1,8 +1,8 @@
 use askama::Template;
 use axum::{
     extract::FromRef,
-    http::{Request, StatusCode},
-    response::{IntoResponse, IntoResponseParts, Response, ResponseParts},
+    http::Request,
+    response::{IntoResponse, IntoResponseParts, ResponseParts},
     Router,
 };
 use axum_csrf::{CsrfConfig, CsrfToken};
@@ -48,21 +48,17 @@ where
     CsrfConfig: FromRef<S>,
     PgPool: FromRef<S>,
 {
-    type Rejection = Response;
+    type Rejection = web::Error;
 
     async fn from_request_parts(
-        parts: &mut http::request::Parts,
+        _parts: &mut http::request::Parts,
         state: &S,
     ) -> Result<Self, Self::Rejection> {
         let pool = PgPool::from_ref(state);
 
-        match pool.acquire().await {
-            Ok(conn) => Ok(PgConn(conn)),
-            Err(err) => {
-                let context = Context::from_request_parts(parts, state).await.unwrap();
-                Err(context.error(None, err.into()))
-            }
-        }
+        let conn = pool.acquire().await?;
+
+        Ok(PgConn(conn))
     }
 }
 
@@ -175,18 +171,6 @@ async fn auto_csrf_token<B: Send>(
     (csrf_token, next.run(req).await)
 }
 
-#[derive(thiserror::Error, Debug)]
-enum AppError {
-    #[error(transparent)]
-    StytchError(#[from] stytch::Error),
-
-    #[error(transparent)]
-    SqlxError(#[from] sqlx::Error),
-
-    #[error(transparent)]
-    Unhandled(#[from] anyhow::Error),
-}
-
 #[derive(Clone, Derivative)]
 #[derivative(Debug)]
 pub struct Context {
@@ -203,51 +187,6 @@ impl Context {
                 cookie: self.csrf_token.authenticity_token(),
                 form: authenticity_token.to_string(),
             })
-    }
-}
-
-impl Context {
-    fn error(self, session: Option<Session>, err: AppError) -> Response {
-        tracing::error!("{:?}", err);
-
-        let user = session.map(|s| s.user);
-
-        use AppError::*;
-        match err {
-            StytchError(err) => {
-                tracing::error!({ ?err }, "stytch error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    InternalServerError {
-                        context: self,
-                        user,
-                    },
-                )
-                    .into_response()
-            }
-            SqlxError(err) => {
-                tracing::error!({ ?err }, "sqlx error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    InternalServerError {
-                        context: self,
-                        user,
-                    },
-                )
-                    .into_response()
-            }
-            Unhandled(err) => {
-                tracing::error!({ ?err }, "unhandled error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    InternalServerError {
-                        context: self,
-                        user,
-                    },
-                )
-                    .into_response()
-            }
-        }
     }
 }
 

@@ -1,8 +1,5 @@
 use async_trait::async_trait;
-use axum::{
-    extract::FromRef,
-    response::{IntoResponse, Redirect, Response},
-};
+use axum::extract::FromRef;
 use axum_csrf::CsrfConfig;
 use axum_extra::extract::PrivateCookieJar;
 use cookie::Cookie;
@@ -55,7 +52,7 @@ where
     cookie::Key: axum::extract::FromRef<S>,
     CsrfConfig: axum::extract::FromRef<S>,
 {
-    type Rejection = Response;
+    type Rejection = super::web::Error;
 
     async fn from_request_parts(
         parts: &mut http::request::Parts,
@@ -79,8 +76,7 @@ where
             Ok(session) => session,
             Err(err) => {
                 tracing::error!({ ?err }, "no active session");
-                // TODO: return Err(AppError::LoggedOut) and redirect in show
-                return Err(Redirect::to(&crate::web::auth::Login.to_string()).into_response());
+                return Err(super::web::Error::NotLoggedIn);
             }
         };
 
