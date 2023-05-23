@@ -237,7 +237,7 @@ pub async fn create(
     form.errors = form.validate().err();
 
     // If the title is an empty string, set it to null instead.
-    let title = coerce_empty(form.title.clone());
+    let title = Some(form.title.clone()).filter(present);
 
     let conn = db.acquire().await?;
 
@@ -335,8 +335,8 @@ pub async fn update(
     let drop = firehose::find_drop(&mut db, &session.user, id).await?;
 
     let fields = firehose::DropFields {
-        title: coerce_empty(form.title.clone()),
-        url: coerce_empty(form.url.clone()),
+        title: Some(form.title.clone()).filter(present),
+        url: Some(form.url.clone()).filter(present),
     };
     let tags = tag_selectors(&form.tags);
 
@@ -397,14 +397,6 @@ fn bookmarklet(base_url: url::Url) -> String {
     )
 }
 
-fn coerce_empty(s: String) -> Option<String> {
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
-}
-
 pub struct Back {
     return_path: Option<String>,
 }
@@ -433,12 +425,16 @@ where
                     .get(0)
                     .and_then(|p| p.to_str().ok())
                     .map(|s| s.to_string())
-                    .and_then(coerce_empty)
+                    .filter(present)
             }
         };
 
         Ok(Self { return_path })
     }
+}
+
+fn present(s: &String) -> bool {
+    !s.is_empty()
 }
 
 #[cfg(test)]
