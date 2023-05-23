@@ -1,14 +1,11 @@
 {% extends "layouts/base.html" %}
+{% import "macros/form.html" as form %}
 
 {% block main %}
 <h1>Log in to Firehose</h1>
 
 <form method="POST" action="{{ crate::web::auth::Login.to_string() }}">
-  <input
-    type="hidden"
-    name="authenticity_token"
-    value="{{ context.csrf_token.authenticity_token() }}"
-  />
+  {% call form::csrf(context) %}
 
   <p>Enter your email to receive a login link.</p>
 

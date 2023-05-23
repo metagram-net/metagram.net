@@ -8,6 +8,7 @@
   method="POST"
   action="{{ crate::web::drops::Collection.to_string() }}"
 >
+  {% call form::csrf(context) %}
   {% call form::errors("Drop", drop.errors) %}
 
   {% include "_fields.html" %}

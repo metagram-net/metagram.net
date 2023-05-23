@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     extract::Form,
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Redirect},
     Router,
 };
 use axum_extra::routing::{RouterExt, TypedPath};
@@ -69,17 +69,14 @@ pub async fn index(
     context: Context,
     session: Session,
     PgConn(mut conn): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let tags = firehose::list_tags(&mut conn, &session.user).await;
+) -> super::Result<impl IntoResponse> {
+    let tags = firehose::list_tags(&mut conn, &session.user).await?;
 
-    match tags {
-        Ok(tags) => Ok(Index {
-            context,
-            user: Some(session.user),
-            tags,
-        }),
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+    Ok(Index {
+        context,
+        user: Some(session.user),
+        tags,
+    })
 }
 
 #[derive(Default, Deserialize)]
@@ -88,6 +85,7 @@ pub struct TagForm {
     name: String,
     color: String,
 
+    authenticity_token: String,
     errors: Option<Vec<String>>,
 }
 
@@ -119,6 +117,18 @@ impl TagForm {
     }
 }
 
+impl From<Tag> for TagForm {
+    fn from(tag: Tag) -> Self {
+        TagForm {
+            name: tag.name,
+            color: tag.color,
+            errors: None,
+
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Template)]
 #[template(path = "firehose/tags/new.html")]
 struct NewTag {
@@ -141,23 +151,21 @@ pub async fn create(
     session: Session,
     PgConn(mut conn): PgConn,
     Form(mut form): Form<TagForm>,
-) -> Result<Redirect, impl IntoResponse> {
-    let errors = match form.validate() {
-        Ok(_) => None,
-        Err(errors) => Some(errors),
-    };
-    form.errors = errors;
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
 
     let tag = firehose::create_tag(&mut conn, &session.user, &form.name, &form.color).await;
     match tag {
-        Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string())),
+        Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string()).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not create tag");
-            Err(NewTag {
+            Ok(NewTag {
                 context,
                 user: Some(session.user),
                 tag: form,
-            })
+            }
+            .into_response())
         }
     }
 }
@@ -179,16 +187,9 @@ pub async fn show(
     context: Context,
     session: Session,
     PgConn(mut conn): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let tag = match firehose::find_tag(&mut conn, &session.user, id).await {
-        Ok(tag) => tag,
-        Err(err) => return Err(context.error(Some(session), err.into())),
-    };
-
-    let drops = match load_tag_drops(&mut conn, &session.user, tag.clone()).await {
-        Ok(drops) => drops,
-        Err(err) => return Err(context.error(Some(session), err.into())),
-    };
+) -> super::Result<impl IntoResponse> {
+    let tag = firehose::find_tag(&mut conn, &session.user, id).await?;
+    let drops = load_tag_drops(&mut conn, &session.user, tag.clone()).await?;
 
     Ok(Show {
         context,
@@ -262,21 +263,15 @@ pub async fn edit(
     context: Context,
     session: Session,
     PgConn(mut conn): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let tag = firehose::find_tag(&mut conn, &session.user, id).await;
-    match tag {
-        Ok(tag) => Ok(EditTag {
-            context,
-            user: Some(session.user),
-            id,
-            tag: TagForm {
-                name: tag.name,
-                color: tag.color,
-                errors: None,
-            },
-        }),
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+) -> super::Result<impl IntoResponse> {
+    let tag = firehose::find_tag(&mut conn, &session.user, id).await?;
+
+    Ok(EditTag {
+        context,
+        user: Some(session.user),
+        id,
+        tag: tag.into(),
+    })
 }
 
 pub async fn update(
@@ -284,12 +279,12 @@ pub async fn update(
     context: Context,
     session: Session,
     PgConn(mut conn): PgConn,
-    Form(form): Form<TagForm>,
-) -> Result<Redirect, Response> {
-    let tag = match firehose::find_tag(&mut conn, &session.user, id).await {
-        Ok(tag) => tag,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    Form(mut form): Form<TagForm>,
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
+
+    let tag = firehose::find_tag(&mut conn, &session.user, id).await?;
 
     let fields = firehose::TagFields {
         name: Some(form.name.clone()),
@@ -298,10 +293,10 @@ pub async fn update(
 
     let tag = firehose::update_tag(&mut conn, &session.user, tag, fields).await;
     match tag {
-        Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string())),
+        Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string()).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not update tag");
-            Err(EditTag {
+            Ok(EditTag {
                 context,
                 user: Some(session.user),
                 id,

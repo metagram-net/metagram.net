@@ -4,7 +4,7 @@ use askama::Template;
 use axum::{
     extract::{Query, State},
     headers::{Header, Referer},
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Redirect},
     Router, TypedHeader,
 };
 use axum_extra::{
@@ -94,6 +94,7 @@ pub struct DropForm {
     url: String,
     tags: HashSet<String>,
 
+    authenticity_token: String,
     errors: Option<Vec<String>>,
 }
 
@@ -112,6 +113,18 @@ impl DropForm {
             Ok(())
         } else {
             Err(errors)
+        }
+    }
+}
+
+impl From<firehose::Drop> for DropForm {
+    fn from(drop: firehose::Drop) -> Self {
+        DropForm {
+            title: drop.drop.title.unwrap_or_default(),
+            url: drop.drop.url,
+            tags: drop.tags.iter().map(|t| t.id.to_string()).collect(),
+
+            ..Default::default()
         }
     }
 }
@@ -196,11 +209,8 @@ pub async fn new(
     context: Context,
     session: Session,
     Query(query): Query<ShareQuery>,
-) -> Result<impl IntoResponse, Response> {
-    let tags = match firehose::list_tags(&mut db, &session.user).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+) -> super::Result<impl IntoResponse> {
+    let tags = firehose::list_tags(&mut db, &session.user).await?;
 
     let drop = query.form();
 
@@ -220,21 +230,16 @@ pub async fn create(
     State(base_url): State<BaseUrl>,
     PgConn(mut db): PgConn,
     Form(mut form): Form<DropForm>,
-) -> Result<Redirect, Response> {
+) -> super::Result<impl IntoResponse> {
     let now = chrono::Utc::now();
-    let errors = match form.validate() {
-        Ok(_) => None,
-        Err(errors) => Some(errors),
-    };
-    form.errors = errors;
+
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
 
     // If the title is an empty string, set it to null instead.
     let title = coerce_empty(form.title.clone());
 
-    let conn = match db.acquire().await {
-        Ok(conn) => conn,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    let conn = db.acquire().await?;
 
     let drop = firehose::create_drop(
         conn,
@@ -248,21 +253,18 @@ pub async fn create(
     .await;
 
     match drop {
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string()).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not create drop");
 
-            let all_tags = match firehose::list_tags(&mut db, &session.user).await {
-                Ok(tags) => tags,
-                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-            };
+            let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-            Err(NewDrop {
+            Ok(NewDrop {
                 context,
                 user: Some(session.user),
                 drop: form,
                 bookmarklet: bookmarklet(base_url.0),
-                tag_options: tag_options(all_tags),
+                tag_options: tag_options(tags),
             }
             .into_response())
         }
@@ -282,15 +284,14 @@ pub async fn show(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    match firehose::find_drop(&mut db, &session.user, id).await {
-        Ok(drop) => Ok(Show {
-            context,
-            user: Some(session.user),
-            drop,
-        }),
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+) -> super::Result<impl IntoResponse> {
+    let drop = firehose::find_drop(&mut db, &session.user, id).await?;
+
+    Ok(Show {
+        context,
+        user: Some(session.user),
+        drop,
+    })
 }
 
 #[derive(Template)]
@@ -308,34 +309,17 @@ pub async fn edit(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let drop = firehose::find_drop(&mut db, &session.user, id).await;
+) -> super::Result<impl IntoResponse> {
+    let drop = firehose::find_drop(&mut db, &session.user, id).await?;
+    let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-    match drop {
-        Ok(drop) => {
-            let selected_tags: HashSet<String> =
-                drop.tags.iter().map(|t| t.id.to_string()).collect();
-
-            let all_tags = match firehose::list_tags(&mut db, &session.user).await {
-                Ok(tags) => tags,
-                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-            };
-
-            Ok(EditDrop {
-                context,
-                user: Some(session.user),
-                id,
-                drop: DropForm {
-                    title: drop.drop.title.unwrap_or_default(),
-                    url: drop.drop.url,
-                    errors: None,
-                    tags: selected_tags,
-                },
-                tag_options: tag_options(all_tags),
-            })
-        }
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+    Ok(EditDrop {
+        context,
+        user: Some(session.user),
+        id,
+        drop: drop.into(),
+        tag_options: tag_options(tags),
+    })
 }
 
 pub async fn update(
@@ -343,12 +327,12 @@ pub async fn update(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-    Form(form): Form<DropForm>,
-) -> Result<Redirect, Response> {
-    let drop = match firehose::find_drop(&mut db, &session.user, id).await {
-        Ok(drop) => drop,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    Form(mut form): Form<DropForm>,
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
+
+    let drop = firehose::find_drop(&mut db, &session.user, id).await?;
 
     let fields = firehose::DropFields {
         title: coerce_empty(form.title.clone()),
@@ -358,21 +342,18 @@ pub async fn update(
 
     let drop = firehose::update_drop(&mut db, &session.user, &drop.drop, fields, Some(tags)).await;
     match drop {
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string())),
+        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string()).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not update drop");
 
-            let all_tags = match firehose::list_tags(&mut db, &session.user).await {
-                Ok(tags) => tags,
-                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-            };
+            let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-            Err(EditDrop {
+            Ok(EditDrop {
                 context,
                 user: Some(session.user),
                 id,
                 drop: form,
-                tag_options: tag_options(all_tags),
+                tag_options: tag_options(tags),
             }
             .into_response())
         }
@@ -382,37 +363,29 @@ pub async fn update(
 #[derive(Deserialize)]
 pub struct MoveForm {
     status: DropStatus,
+
+    authenticity_token: String,
 }
 
 pub async fn r#move(
     Move { id }: Move,
     Back { return_path }: Back,
-
-    // TODO: Why is this line needed? Is it a "type hint" that AppState is needed?
-    State(_state): State<AppState>,
-
-    context: Context,
     session: Session,
     PgConn(mut db): PgConn,
+    context: Context,
     Form(form): Form<MoveForm>,
-) -> Result<Redirect, impl IntoResponse> {
+) -> super::Result<impl IntoResponse> {
     let now = chrono::Utc::now();
 
-    let drop = match firehose::find_drop(&mut db, &session.user, id).await {
-        Ok(drop) => drop,
-        Err(err) => return Err(context.error(Some(session), err.into())),
-    };
+    context.verify_csrf(&form.authenticity_token)?;
 
-    let drop = firehose::move_drop(&mut db, drop, form.status, now).await;
-    match drop {
-        Ok(drop) => {
-            // Redirect back to the page the action was taken from. If we don't know, go to the
-            // drop page.
-            let dest = return_path.unwrap_or_else(|| Member { id: drop.drop.id }.to_string());
-            Ok(Redirect::to(&dest))
-        }
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+    let drop = firehose::find_drop(&mut db, &session.user, id).await?;
+    let drop = firehose::move_drop(&mut db, drop, form.status, now).await?;
+
+    // Redirect back to the page the action was taken from. If we don't know, go to the
+    // drop page.
+    let dest = return_path.unwrap_or_else(|| Member { id: drop.drop.id }.to_string());
+    Ok(Redirect::to(&dest))
 }
 
 fn bookmarklet(base_url: url::Url) -> String {

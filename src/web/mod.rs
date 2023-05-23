@@ -48,7 +48,6 @@ async fn show_app_error(
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[non_exhaustive]
 #[allow(clippy::large_enum_variant)] // TODO: Box more
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -61,6 +60,12 @@ pub enum Error {
     #[error("user not found")]
     UserNotFound { stytch_user_id: String },
 
+    #[error("drop not found")]
+    DropNotFound { drop_id: String },
+
+    #[error("stream not found")]
+    StreamNotFound { stream_id: String },
+
     #[error(transparent)]
     Stytch(#[from] stytch::Error),
 
@@ -69,6 +74,9 @@ pub enum Error {
 
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
+
+    #[error(transparent)]
+    Sqlx(#[from] sqlx::Error),
 }
 
 impl Error {
@@ -110,7 +118,13 @@ impl Error {
 
             UserNotFound { .. } => wrap(Redirect::to(&auth::Login.to_string())),
 
-            Stytch(_) | Boxed(_) | Anyhow(_) => wrap((
+            // TODO: Render a nicer not-found
+            DropNotFound { .. } => wrap(StatusCode::NOT_FOUND),
+
+            // TODO: Render a nicer not-found
+            StreamNotFound { .. } => wrap(StatusCode::NOT_FOUND),
+
+            Stytch(_) | Boxed(_) | Anyhow(_) | Sqlx(_) => wrap((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 InternalServerError { context, user },
             )),
@@ -131,3 +145,5 @@ struct InternalServerError {
     context: Context,
     user: Option<User>,
 }
+
+// TODO: Web prelude = {Result, Error, StdResult}

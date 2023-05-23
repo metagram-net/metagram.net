@@ -1,9 +1,12 @@
+{% import "macros/form.html" as form %}
+
 {% macro action(drop_id, status, text) %}
   <form
     method="POST"
     action="{{ crate::web::drops::Move::path(drop.id) }}"
     class="inline-block",
   >
+    {% call form::csrf(context) %}
     <div>
       <input type="hidden" name="status" value="{{ status }}" />
       <button type="submit" class="btn btn-gray">{{ text }}</button>

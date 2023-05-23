@@ -8,6 +8,7 @@
   method="POST"
   action="{{ crate::web::tags::Collection.to_string() }}"
 >
+  {% call form::csrf(context) %}
   {% call form::errors("Tag", tag.errors) %}
 
   {% include "_fields.html" %}

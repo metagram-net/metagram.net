@@ -1,6 +1,5 @@
 use askama::Template;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Redirect};
 use axum::Router;
 use axum_extra::routing::RouterExt;
 use axum_extra::{extract::Form, routing::TypedPath};
@@ -72,11 +71,8 @@ pub async fn index(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let streams = match firehose::list_streams(&mut db, &session.user).await {
-        Ok(streams) => streams,
-        Err(err) => return Err(context.error(Some(session), err.into())),
-    };
+) -> super::Result<impl IntoResponse> {
+    let streams = firehose::list_streams(&mut db, &session.user).await?;
 
     Ok(Index {
         context,
@@ -100,6 +96,7 @@ pub struct StreamForm {
     name: String,
     tags: Vec<String>,
 
+    authenticity_token: String,
     errors: Option<Vec<String>>,
 }
 
@@ -122,16 +119,29 @@ impl StreamForm {
     }
 }
 
+impl From<firehose::CustomStream> for StreamForm {
+    fn from(stream: firehose::CustomStream) -> Self {
+        StreamForm {
+            name: stream.stream.name,
+            tags: stream
+                .tags
+                .iter()
+                .cloned()
+                .map(|t| t.id.to_string())
+                .collect(),
+
+            ..Default::default()
+        }
+    }
+}
+
 pub async fn new(
     _: New,
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let tags = match firehose::list_tags(&mut db, &session.user).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+) -> super::Result<impl IntoResponse> {
+    let tags = firehose::list_tags(&mut db, &session.user).await?;
 
     Ok(NewStream {
         context,
@@ -147,12 +157,9 @@ pub async fn create(
     session: Session,
     PgConn(mut db): PgConn,
     Form(mut form): Form<StreamForm>,
-) -> Result<Redirect, impl IntoResponse> {
-    let errors = match form.validate() {
-        Ok(_) => None,
-        Err(errors) => Some(errors),
-    };
-    form.errors = errors;
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
 
     let tag_ids: Vec<Uuid> = form
         .tags
@@ -169,12 +176,9 @@ pub async fn create(
             Some(errs)
         };
 
-        let tags = match firehose::list_tags(&mut db, &session.user).await {
-            Ok(tags) => tags,
-            Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-        };
+        let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-        return Err(NewStream {
+        return Ok(NewStream {
             context,
             user: Some(session.user),
             stream: form,
@@ -183,10 +187,7 @@ pub async fn create(
         .into_response());
     }
 
-    let tags = match firehose::find_tags(&mut db, &session.user, &tag_ids).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    let tags = firehose::find_tags(&mut db, &session.user, &tag_ids).await?;
 
     match firehose::create_stream(&mut db, &session.user, &form.name, &tags).await {
         Ok(stream) => Ok(Redirect::to(
@@ -194,16 +195,14 @@ pub async fn create(
                 id: stream.stream.id.to_string(),
             }
             .to_string(),
-        )),
+        )
+        .into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not create stream");
 
-            let tags = match firehose::list_tags(&mut db, &session.user).await {
-                Ok(tags) => tags,
-                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-            };
+            let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-            Err(NewStream {
+            Ok(NewStream {
                 context,
                 user: Some(session.user),
                 stream: form,
@@ -228,8 +227,8 @@ pub async fn show(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let stream: anyhow::Result<firehose::Stream> = match id.as_str() {
+) -> super::Result<impl IntoResponse> {
+    let stream: firehose::Stream = match id.as_str() {
         "unread" => Ok(firehose::Stream::Status(firehose::StatusStream {
             status: DropStatus::Unread,
         })),
@@ -240,22 +239,10 @@ pub async fn show(
             status: DropStatus::Saved,
         })),
 
-        id => match Uuid::parse_str(id) {
-            Ok(id) => firehose::find_stream(&mut db, &session.user, id)
-                .await
-                .map(firehose::Stream::Custom)
-                .map_err(Into::into),
-            Err(err) => Err(err.into()),
-        },
-    };
-
-    let stream = match stream {
-        Ok(stream) => stream,
-        Err(err) => {
-            tracing::error!({ ?err, ?session.user.id, ?id }, "Stream not found");
-            return Err(StatusCode::NOT_FOUND.into_response());
-        }
-    };
+        id => firehose::find_stream(&mut db, &session.user, parse_stream_id(id)?)
+            .await
+            .map(firehose::Stream::Custom),
+    }?;
 
     let mut filters = stream.filters();
 
@@ -264,17 +251,14 @@ pub async fn show(
         filters.status = Some(DropStatus::Unread);
     }
 
-    let drops = firehose::list_drops(&mut db, &session.user, filters).await;
+    let drops = firehose::list_drops(&mut db, &session.user, filters).await?;
 
-    match drops {
-        Ok(drops) => Ok(ShowPage {
-            context,
-            user: Some(session.user),
-            stream,
-            drops,
-        }),
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+    Ok(ShowPage {
+        context,
+        user: Some(session.user),
+        stream,
+        drops,
+    })
 }
 
 #[derive(Template)]
@@ -292,31 +276,15 @@ pub async fn edit(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let stream = match firehose::find_stream(&mut db, &session.user, id).await {
-        Ok(stream) => stream,
-        Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
-    };
-
-    let tags = match firehose::list_tags(&mut db, &session.user).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+) -> super::Result<impl IntoResponse> {
+    let stream = firehose::find_stream(&mut db, &session.user, id).await?;
+    let tags = firehose::list_tags(&mut db, &session.user).await?;
 
     Ok(EditStream {
         context,
         user: Some(session.user),
         id,
-        stream: StreamForm {
-            errors: None,
-            name: stream.stream.name,
-            tags: stream
-                .tags
-                .iter()
-                .cloned()
-                .map(|t| t.id.to_string())
-                .collect(),
-        },
+        stream: stream.into(),
         tag_options: tag_options(tags),
     })
 }
@@ -327,22 +295,13 @@ pub async fn update(
     session: Session,
     PgConn(mut db): PgConn,
     Form(mut form): Form<StreamForm>,
-) -> Result<Redirect, Response> {
-    let errors = match form.validate() {
-        Ok(_) => None,
-        Err(errors) => Some(errors),
-    };
-    form.errors = errors;
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
 
-    let id = match Uuid::parse_str(&id) {
-        Ok(id) => id,
-        Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
-    };
+    let id = parse_stream_id(&id)?;
 
-    let stream = match firehose::find_stream(&mut db, &session.user, id).await {
-        Ok(stream) => stream,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    let stream = firehose::find_stream(&mut db, &session.user, id).await?;
 
     let tag_ids: Vec<Uuid> = form
         .tags
@@ -359,12 +318,9 @@ pub async fn update(
             Some(errs)
         };
 
-        let tags = match firehose::list_tags(&mut db, &session.user).await {
-            Ok(tags) => tags,
-            Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-        };
+        let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-        return Err(EditStream {
+        return Ok(EditStream {
             context,
             user: Some(session.user),
             id,
@@ -374,10 +330,7 @@ pub async fn update(
         .into_response());
     }
 
-    let tags = match firehose::find_tags(&mut db, &session.user, &tag_ids).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    let tags = firehose::find_tags(&mut db, &session.user, &tag_ids).await?;
 
     let fields = firehose::StreamFields {
         name: Some(form.name.clone()),
@@ -391,16 +344,14 @@ pub async fn update(
                 id: stream.stream.id.to_string(),
             }
             .to_string(),
-        )),
+        )
+        .into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not update stream");
 
-            let tags = match firehose::list_tags(&mut db, &session.user).await {
-                Ok(tags) => tags,
-                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-            };
+            let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-            Err(EditStream {
+            Ok(EditStream {
                 context,
                 user: Some(session.user),
                 id,
@@ -410,4 +361,10 @@ pub async fn update(
             .into_response())
         }
     }
+}
+
+fn parse_stream_id(id: &str) -> super::Result<Uuid> {
+    Uuid::parse_str(id).map_err(|_| super::Error::StreamNotFound {
+        stream_id: id.to_string(),
+    })
 }

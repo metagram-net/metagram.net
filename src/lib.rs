@@ -177,9 +177,6 @@ async fn auto_csrf_token<B: Send>(
 
 #[derive(thiserror::Error, Debug)]
 enum AppError {
-    #[error("authenticity token mismatch")]
-    CsrfMismatch,
-
     #[error(transparent)]
     StytchError(#[from] stytch::Error),
 
@@ -217,14 +214,6 @@ impl Context {
 
         use AppError::*;
         match err {
-            CsrfMismatch => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                UnprocessableEntity {
-                    context: self,
-                    user,
-                },
-            )
-                .into_response(),
             StytchError(err) => {
                 tracing::error!({ ?err }, "stytch error");
                 (

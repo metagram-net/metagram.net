@@ -8,6 +8,7 @@
   method="POST"
   action="{{ crate::web::tags::Member::path(id) }}"
 >
+  {% call form::csrf(context) %}
   {% call form::errors("Tag", tag.errors) %}
 
   {% include "_fields.html" %}
@@ -17,3 +18,5 @@
   </div>
 </form>
 {% endblock %}
+
+{# TODO: Delete Tag button #}

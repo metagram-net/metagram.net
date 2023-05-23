@@ -1,3 +1,4 @@
+{%- import "macros/form.html" as form -%}
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -80,11 +81,7 @@
                 {% match user %}
                 {% when Some(user) %}
                 <form method="POST" action="{{ crate::web::auth::Logout.to_string() }}">
-                  <input
-                    type="hidden"
-                    name="authenticity_token"
-                    value="{{ context.csrf_token.authenticity_token() }}"
-                  />
+                  {% call form::csrf(context) %}
                   <button type="submit">Log out</button>
                 </form>
                 {% when None %}

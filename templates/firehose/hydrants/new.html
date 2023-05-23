@@ -8,6 +8,7 @@
   method="POST"
   action="{{ crate::web::hydrants::Collection.to_string() }}"
 >
+  {% call form::csrf(context) %}
   {% call form::errors("Hydrant", hydrant.errors) %}
 
   {% include "_fields.html" %}

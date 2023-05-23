@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
 use askama::Template;
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Redirect};
 use axum::Router;
 use axum_extra::routing::RouterExt;
 use axum_extra::{extract::Form, routing::TypedPath};
-use http::StatusCode;
 use serde::{Deserialize, Deserializer};
 use uuid::Uuid;
 
@@ -79,17 +78,14 @@ pub async fn index(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let hydrants = firehose::list_hydrants(&mut db, &session.user).await;
+) -> super::Result<impl IntoResponse> {
+    let hydrants = firehose::list_hydrants(&mut db, &session.user).await?;
 
-    match hydrants {
-        Ok(hydrants) => Ok(Index {
-            context,
-            user: Some(session.user),
-            hydrants,
-        }),
-        Err(err) => Err(context.error(Some(session), err.into())),
-    }
+    Ok(Index {
+        context,
+        user: Some(session.user),
+        hydrants,
+    })
 }
 
 #[derive(Default, Deserialize)]
@@ -101,6 +97,7 @@ pub struct HydrantForm {
     active: bool,
     tags: HashSet<String>,
 
+    authenticity_token: String,
     errors: Option<Vec<String>>,
 }
 
@@ -137,6 +134,22 @@ impl HydrantForm {
     }
 }
 
+impl From<firehose::Hydrant> for HydrantForm {
+    fn from(hydrant: firehose::Hydrant) -> Self {
+        let tags: HashSet<String> = hydrant.tags.iter().map(|t| t.id.to_string()).collect();
+
+        HydrantForm {
+            errors: None,
+            name: hydrant.hydrant.name,
+            url: hydrant.hydrant.url,
+            active: hydrant.hydrant.active,
+            tags,
+
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Template)]
 #[template(path = "firehose/hydrants/new.html")]
 struct NewHydrant {
@@ -151,11 +164,8 @@ pub async fn new(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let tags = match firehose::list_tags(&mut db, &session.user).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+) -> super::Result<impl IntoResponse> {
+    let tags = firehose::list_tags(&mut db, &session.user).await?;
 
     Ok(NewHydrant {
         context,
@@ -174,12 +184,9 @@ pub async fn create(
     session: Session,
     PgConn(mut db): PgConn,
     Form(mut form): Form<HydrantForm>,
-) -> Result<Redirect, Response> {
-    let errors = match form.validate() {
-        Ok(_) => None,
-        Err(errors) => Some(errors),
-    };
-    form.errors = errors;
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
 
     let hydrant = firehose::create_hydrant(
         &mut db,
@@ -190,22 +197,21 @@ pub async fn create(
         Some(tag_selectors(&form.tags)),
     )
     .await;
+
     match hydrant {
         Ok(hydrant) => Ok(Redirect::to(
             &Member {
                 id: hydrant.hydrant.id,
             }
             .to_string(),
-        )),
+        )
+        .into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not create hydrant");
 
-            let tags = match firehose::list_tags(&mut db, &session.user).await {
-                Ok(tags) => tags,
-                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-            };
+            let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-            Err(NewHydrant {
+            Ok(NewHydrant {
                 context,
                 user: Some(session.user),
                 hydrant: form,
@@ -229,11 +235,10 @@ pub async fn show(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
-        Ok(hydrant) => hydrant,
-        Err(err) => return Err(context.error(Some(session), err.into())),
-    };
+) -> super::Result<impl IntoResponse> {
+    let hydrant = firehose::find_hydrant(&mut db, &session.user, id).await?;
+
+    // TODO: map_err(404)?
 
     // TODO: show hydrant drops?
 
@@ -259,31 +264,19 @@ pub async fn edit(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<impl IntoResponse, Response> {
-    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
-        Ok(hydrant) => hydrant,
-        Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
-    };
+) -> super::Result<impl IntoResponse> {
+    let hydrant = firehose::find_hydrant(&mut db, &session.user, id).await?;
 
-    let selected_tags: HashSet<String> = hydrant.tags.iter().map(|t| t.id.to_string()).collect();
+    // TODO: map_err(404)?
 
-    let all_tags = match firehose::list_tags(&mut db, &session.user).await {
-        Ok(tags) => tags,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    let tags = firehose::list_tags(&mut db, &session.user).await?;
 
     Ok(EditHydrant {
         context,
         user: Some(session.user),
         id,
-        hydrant: HydrantForm {
-            errors: None,
-            name: hydrant.hydrant.name,
-            url: hydrant.hydrant.url,
-            active: hydrant.hydrant.active,
-            tags: selected_tags,
-        },
-        tag_options: tag_options(all_tags),
+        hydrant: hydrant.into(),
+        tag_options: tag_options(tags),
     })
 }
 
@@ -292,12 +285,12 @@ pub async fn update(
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-    Form(form): Form<HydrantForm>,
-) -> Result<Redirect, Response> {
-    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
-        Ok(hydrant) => hydrant,
-        Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-    };
+    Form(mut form): Form<HydrantForm>,
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
+    form.errors = form.validate().err();
+
+    let hydrant = firehose::find_hydrant(&mut db, &session.user, id).await?;
 
     let tags = tag_selectors(&form.tags);
 
@@ -314,16 +307,14 @@ pub async fn update(
                 id: hydrant.hydrant.id,
             }
             .to_string(),
-        )),
+        )
+        .into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not update hydrant");
 
-            let tags = match firehose::list_tags(&mut db, &session.user).await {
-                Ok(tags) => tags,
-                Err(err) => return Err(context.error(Some(session), err.into()).into_response()),
-            };
+            let tags = firehose::list_tags(&mut db, &session.user).await?;
 
-            Err(EditHydrant {
+            Ok(EditHydrant {
                 context,
                 user: Some(session.user),
                 id,
@@ -347,21 +338,25 @@ impl Delete {
     }
 }
 
+#[derive(Deserialize)]
+pub struct HydrantDeleteForm {
+    authenticity_token: String,
+}
+
 pub async fn delete(
     Delete { id }: Delete,
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
-) -> Result<Redirect, Response> {
-    let hydrant = match firehose::find_hydrant(&mut db, &session.user, id).await {
-        Ok(hydrant) => hydrant,
-        Err(_) => return Err(StatusCode::NOT_FOUND.into_response()),
-    };
+    Form(form): Form<HydrantDeleteForm>,
+) -> super::Result<impl IntoResponse> {
+    context.verify_csrf(&form.authenticity_token)?;
 
-    match firehose::delete_hydrant(&mut db, &session.user, hydrant.hydrant).await {
-        Ok(_) => Ok(Redirect::to(&Collection.to_string())),
-        Err(err) => Err(context.error(Some(session), err.into()).into_response()),
-    }
+    let hydrant = firehose::find_hydrant(&mut db, &session.user, id).await?;
+
+    firehose::delete_hydrant(&mut db, &session.user, hydrant.hydrant).await?;
+
+    Ok(Redirect::to(&Collection.to_string()))
 }
 
 // TODO: Third copy, extract it.

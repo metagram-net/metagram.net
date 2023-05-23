@@ -15,3 +15,11 @@
   {% when None %}
   {% endmatch %}
 {% endmacro %}
+
+{% macro csrf(context) %}
+  <input
+    type="hidden"
+    name="authenticity_token"
+    value="{{ context.csrf_token.authenticity_token() }}"
+  />
+{% endmacro %}

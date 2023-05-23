@@ -8,6 +8,7 @@
   method="POST"
   action="{{ crate::web::streams::Collection.to_string() }}"
 >
+  {% call form::csrf(context) %}
   {% call form::errors("Stream", stream.errors) %}
 
   {% include "_fields.html" %}
