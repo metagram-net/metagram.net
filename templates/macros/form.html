@@ -20,6 +20,6 @@
   <input
     type="hidden"
     name="authenticity_token"
-    value="{{ context.csrf_token.authenticity_token() }}"
+    value="{{ context.authenticity_token }}"
   />
 {% endmacro %}

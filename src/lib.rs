@@ -131,16 +131,12 @@ impl Server {
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
-            // This ordering is important! While processing the inbound request, auto_csrf_token
-            // assumes that CsrfLayer has already extracted the authenticity token from the
-            // cookies. When generating the outbound response, order doesn't matter. So keep
-            // auto_csrf_token deeper in the middleware stack.
+            // Why include the CSRF-protection token on every request instead of just where it's
+            // needed?
             //
-            // Why do this on every request instead of just where it's needed? When the user is
-            // logged in, every page (even error pages) contains a logout form that would require
-            // doing this anyway.
-            //
-            // TODO: Could this become CsrfLayer's job?
+            // When the user is logged in, every page (even error pages) contains a logout
+            // form that would require doing this anyway. If there's no logged-in user, they're
+            // probably at the login page, which is also a form!
             .layer(axum::middleware::from_fn_with_state(state, auto_csrf_token));
 
         Ok(Self { app })
@@ -176,6 +172,12 @@ async fn auto_csrf_token<B: Send>(
 pub struct Context {
     #[derivative(Debug = "ignore")]
     csrf_token: CsrfToken,
+
+    // Computing csrf_token.authenticity_token() an expensive hash by design, but it only needs to
+    // be computed once per response. Cache it here to speed up rendering for multi-form pages.
+    #[derivative(Debug = "ignore")]
+    authenticity_token: String,
+
     request_id: Option<String>,
 }
 
@@ -217,7 +219,8 @@ where
             .map(|s| s.to_string());
 
         let ctx = Self {
-            csrf_token,
+            csrf_token: csrf_token.clone(),
+            authenticity_token: csrf_token.authenticity_token(),
             request_id,
         };
 
