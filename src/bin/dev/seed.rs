@@ -117,7 +117,7 @@ async fn seed_streams(
         let phrase: Vec<String> = lorem::Words(1..3).fake_with_rng(rng);
         let name = capitalize(phrase.join(" "));
 
-        let tag_count = rng.gen_range(1..3);
+        let tag_count = rng.gen_range(1..=3);
         let tags: Vec<firehose::Tag> = rng
             .sample_iter(Uniform::new(0, all_tags.len()))
             .take(tag_count)
@@ -146,7 +146,7 @@ async fn seed_drops(
             None
         };
 
-        let tag_count = rng.gen_range(0..3);
+        let tag_count = rng.gen_range(0..=3);
         let tags: Vec<firehose::TagSelector> = rng
             .sample_iter(Uniform::new(0, all_tags.len()))
             .take(tag_count)
@@ -189,7 +189,7 @@ async fn seed_hydrants(
     for _ in 0..NUM_HYDRANTS {
         let name: String = Title(1..3).fake_with_rng(rng);
 
-        let tag_count = rng.gen_range(0..3);
+        let tag_count = rng.gen_range(0..=3);
         let tags: Vec<firehose::TagSelector> = rng
             .sample_iter(Uniform::new(0, all_tags.len()))
             .take(tag_count)
