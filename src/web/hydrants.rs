@@ -38,12 +38,12 @@ pub struct New;
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/hydrants/:id")]
 pub struct Member {
-    id: Uuid,
+    id: String,
 }
 
 impl Member {
     pub fn path(id: &Uuid) -> String {
-        Self { id: *id }.to_string()
+        Self { id: id.to_string() }.to_string()
     }
 }
 
@@ -199,13 +199,7 @@ pub async fn create(
     .await;
 
     match hydrant {
-        Ok(hydrant) => Ok(Redirect::to(
-            &Member {
-                id: hydrant.hydrant.id,
-            }
-            .to_string(),
-        )
-        .into_response()),
+        Ok(hydrant) => Ok(Redirect::to(&Member::path(&hydrant.hydrant.id)).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not create hydrant");
 
@@ -236,6 +230,7 @@ pub async fn show(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> super::Result<impl IntoResponse> {
+    let id = parse_hydrant_id(&id)?;
     let hydrant = firehose::find_hydrant(&mut db, &session.user, id).await?;
 
     // TODO: map_err(404)?
@@ -290,6 +285,7 @@ pub async fn update(
     context.verify_csrf(&form.authenticity_token)?;
     form.errors = form.validate().err();
 
+    let id = parse_hydrant_id(&id)?;
     let hydrant = firehose::find_hydrant(&mut db, &session.user, id).await?;
 
     let tags = tag_selectors(&form.tags);
@@ -302,13 +298,7 @@ pub async fn update(
     };
 
     match firehose::update_hydrant(&mut db, &session.user, &hydrant.hydrant, fields).await {
-        Ok(hydrant) => Ok(Redirect::to(
-            &Member {
-                id: hydrant.hydrant.id,
-            }
-            .to_string(),
-        )
-        .into_response()),
+        Ok(hydrant) => Ok(Redirect::to(&Member::path(&hydrant.hydrant.id)).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not update hydrant");
 
@@ -378,4 +368,10 @@ fn tag_selectors(opts: &HashSet<String>) -> Vec<firehose::TagSelector> {
             },
         })
         .collect()
+}
+
+fn parse_hydrant_id(id: &str) -> super::Result<Uuid> {
+    Uuid::parse_str(id).map_err(|_| super::Error::HydrantNotFound {
+        hydrant_id: id.to_string(),
+    })
 }

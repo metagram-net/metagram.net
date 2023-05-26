@@ -48,14 +48,14 @@ pub struct New;
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/drops/:id")]
 pub struct Member {
-    id: Uuid,
+    id: String,
 }
 
 // TODO: Is there a good way to derive path()?
 
 impl Member {
     pub fn path(id: &Uuid) -> String {
-        Self { id: *id }.to_string()
+        Self { id: id.to_string() }.to_string()
     }
 }
 
@@ -253,7 +253,7 @@ pub async fn create(
     .await;
 
     match drop {
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string()).into_response()),
+        Ok(drop) => Ok(Redirect::to(&Member::path(&drop.drop.id)).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not create drop");
 
@@ -285,6 +285,7 @@ pub async fn show(
     session: Session,
     PgConn(mut db): PgConn,
 ) -> super::Result<impl IntoResponse> {
+    let id = parse_drop_id(&id)?;
     let drop = firehose::find_drop(&mut db, &session.user, id).await?;
 
     Ok(Show {
@@ -332,6 +333,7 @@ pub async fn update(
     context.verify_csrf(&form.authenticity_token)?;
     form.errors = form.validate().err();
 
+    let id = parse_drop_id(&id)?;
     let drop = firehose::find_drop(&mut db, &session.user, id).await?;
 
     let fields = firehose::DropFields {
@@ -342,7 +344,7 @@ pub async fn update(
 
     let drop = firehose::update_drop(&mut db, &session.user, &drop.drop, fields, Some(tags)).await;
     match drop {
-        Ok(drop) => Ok(Redirect::to(&Member { id: drop.drop.id }.to_string()).into_response()),
+        Ok(drop) => Ok(Redirect::to(&Member::path(&drop.drop.id)).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not update drop");
 
@@ -384,7 +386,7 @@ pub async fn r#move(
 
     // Redirect back to the page the action was taken from. If we don't know, go to the
     // drop page.
-    let dest = return_path.unwrap_or_else(|| Member { id: drop.drop.id }.to_string());
+    let dest = return_path.unwrap_or_else(|| Member::path(&drop.drop.id));
     Ok(Redirect::to(&dest))
 }
 
@@ -490,4 +492,10 @@ mod tests {
         assert_eq!("Test Title", form.title);
         assert_eq!("https://example.com/sample", form.url);
     }
+}
+
+fn parse_drop_id(id: &str) -> super::Result<Uuid> {
+    Uuid::parse_str(id).map_err(|_| super::Error::DropNotFound {
+        drop_id: id.to_string(),
+    })
 }

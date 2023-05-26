@@ -35,12 +35,12 @@ pub struct New;
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/firehose/tags/:id")]
 pub struct Member {
-    id: Uuid,
+    id: String,
 }
 
 impl Member {
     pub fn path(id: &Uuid) -> String {
-        Self { id: *id }.to_string()
+        Self { id: id.to_string() }.to_string()
     }
 }
 
@@ -157,7 +157,7 @@ pub async fn create(
 
     let tag = firehose::create_tag(&mut conn, &session.user, &form.name, &form.color).await;
     match tag {
-        Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string()).into_response()),
+        Ok(tag) => Ok(Redirect::to(&Member::path(&tag.id)).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not create tag");
             Ok(NewTag {
@@ -188,6 +188,7 @@ pub async fn show(
     session: Session,
     PgConn(mut conn): PgConn,
 ) -> super::Result<impl IntoResponse> {
+    let id = parse_tag_id(&id)?;
     let tag = firehose::find_tag(&mut conn, &session.user, id).await?;
     let drops = load_tag_drops(&mut conn, &session.user, tag.clone()).await?;
 
@@ -284,6 +285,8 @@ pub async fn update(
     context.verify_csrf(&form.authenticity_token)?;
     form.errors = form.validate().err();
 
+    let id = parse_tag_id(&id)?;
+
     let tag = firehose::find_tag(&mut conn, &session.user, id).await?;
 
     let fields = firehose::TagFields {
@@ -293,7 +296,7 @@ pub async fn update(
 
     let tag = firehose::update_tag(&mut conn, &session.user, tag, fields).await;
     match tag {
-        Ok(tag) => Ok(Redirect::to(&Member { id: tag.id }.to_string()).into_response()),
+        Ok(tag) => Ok(Redirect::to(&Member::path(&tag.id)).into_response()),
         Err(err) => {
             tracing::error!({ ?err }, "could not update tag");
             Ok(EditTag {
@@ -305,4 +308,10 @@ pub async fn update(
             .into_response())
         }
     }
+}
+
+fn parse_tag_id(id: &str) -> super::Result<Uuid> {
+    Uuid::parse_str(id).map_err(|_| super::Error::TagNotFound {
+        tag_id: id.to_string(),
+    })
 }

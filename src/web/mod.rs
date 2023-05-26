@@ -63,6 +63,12 @@ pub enum Error {
     #[error("drop not found")]
     DropNotFound { drop_id: String },
 
+    #[error("hydrant not found")]
+    HydrantNotFound { hydrant_id: String },
+
+    #[error("tag not found")]
+    TagNotFound { tag_id: String },
+
     #[error("stream not found")]
     StreamNotFound { stream_id: String },
 
@@ -118,11 +124,10 @@ impl Error {
 
             UserNotFound { .. } => wrap(Redirect::to(&auth::Login.to_string())),
 
-            // TODO: Render a nicer not-found
-            DropNotFound { .. } => wrap(StatusCode::NOT_FOUND),
-
-            // TODO: Render a nicer not-found
-            StreamNotFound { .. } => wrap(StatusCode::NOT_FOUND),
+            DropNotFound { .. } => resource_not_found(context, user, "drop"),
+            HydrantNotFound { .. } => resource_not_found(context, user, "hydrant"),
+            TagNotFound { .. } => resource_not_found(context, user, "tag"),
+            StreamNotFound { .. } => resource_not_found(context, user, "stream"),
 
             Stytch(_) | Boxed(_) | Anyhow(_) | Sqlx(_) => wrap((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -144,6 +149,26 @@ struct UnprocessableEntity {
 struct InternalServerError {
     context: Context,
     user: Option<User>,
+}
+
+#[derive(Template)]
+#[template(path = "errors/404_resource_not_found.html")]
+struct ResourceNotFound {
+    context: Context,
+    user: Option<User>,
+
+    resource: String,
+}
+
+fn resource_not_found(context: Context, user: Option<User>, resource: &str) -> Response {
+    let body = ResourceNotFound {
+        context,
+        user,
+
+        resource: resource.to_string(),
+    };
+
+    (StatusCode::NOT_FOUND, body).into_response()
 }
 
 // TODO: Web prelude = {Result, Error, StdResult}
