@@ -28,14 +28,15 @@ WORKDIR /usr/local/src/metagram
 
 # Copy in just enough to make `cargo metadata` work.
 COPY Cargo.toml Cargo.lock ./
-COPY src/bin src/bin
+COPY metagram_server/Cargo.toml metagram_server/Cargo.toml
+COPY metagram_server/src/bin metagram_server/src/bin
 
 COPY about.toml about.toml
-COPY templates/home/licenses.hbs templates/home/licenses.hbs
+COPY metagram_server/templates/home/licenses.hbs metagram_server/templates/home/licenses.hbs
 
 RUN cargo about generate \
-    --output-file licenses.html \
-    templates/home/licenses.hbs
+    --output-file metagram_server/licenses.html \
+    metagram_server/templates/home/licenses.hbs
 
 ###############################################################################
 # Build the server
@@ -46,14 +47,15 @@ WORKDIR /usr/local/src/metagram
 
 # Copy in just enough to make `cargo fetch` work.
 COPY Cargo.toml Cargo.lock ./
-COPY src/bin src/bin
+COPY metagram_server/Cargo.toml metagram_server/Cargo.toml
+COPY metagram_server/src/bin metagram_server/src/bin
 
 RUN cargo fetch
 
 COPY . .
 COPY --from=licenses \
-    /usr/local/src/metagram/licenses.html \
-    /usr/local/src/metagram/licenses.html
+    /usr/local/src/metagram/metagram_server/licenses.html \
+    /usr/local/src/metagram/metagram_server/licenses.html
 
 ENV SQLX_OFFLINE=true
 

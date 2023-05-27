@@ -75,7 +75,7 @@ async fn main() {
         cookie::Key::from(&key)
     };
 
-    let auth: metagram::Auth = {
+    let auth: metagram_server::Auth = {
         let stytch_config = stytch::Config {
             base_url: config.stytch_env.base_url().unwrap(),
             project_id: config.stytch_project_id,
@@ -99,9 +99,9 @@ async fn main() {
         .await
         .expect("database_pool");
 
-    let worker = metagram::queue::Worker::new(database_pool.clone(), Duration::from_secs(60));
+    let worker = metagram_server::queue::Worker::new(database_pool.clone(), Duration::from_secs(60));
 
-    let srv = metagram::Server::new(metagram::ServerConfig {
+    let srv = metagram_server::Server::new(metagram_server::ServerConfig {
         auth,
         base_url,
         cookie_key,
@@ -121,7 +121,7 @@ async fn main() {
     let (web, work, cron) = tokio::join!(
         srv.run(addr, rx.clone()),
         worker.run(rx.clone()),
-        metagram::jobs::cron(database_pool, rx.clone()),
+        metagram_server::jobs::cron(database_pool, rx.clone()),
     );
     web.unwrap();
     work.unwrap();
@@ -162,7 +162,7 @@ struct StytchAuth {
 }
 
 #[async_trait]
-impl metagram::AuthN for StytchAuth {
+impl metagram_server::AuthN for StytchAuth {
     async fn send_magic_link(
         &self,
         email: String,

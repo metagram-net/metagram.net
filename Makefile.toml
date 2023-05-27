@@ -1,3 +1,6 @@
+[config]
+default_to_workspace = false
+
 [tasks.dev]
 description = "Start dev services and run the app, watching for changes"
 run_task = { name = ["about", "watch"] }
@@ -22,7 +25,7 @@ args = ["build.mjs", "watch"]
 description = "Run the server"
 command = "cargo"
 args = ["run", "--bin", "server"]
-watch = { watch = ["src", "templates", "Cargo.toml"] }
+watch = { watch = ["metagram_server", "Cargo.toml"] }
 
 [tasks.db-wait]
 description = "Wait for the dev database to become available"
@@ -72,8 +75,8 @@ description = "Run cargo-about to generate license information"
 command = "cargo"
 args = [
     "about", "generate",
-    "--output-file", "licenses.html",
-    "templates/home/licenses.hbs",
+    "--output-file", "metagram_server/licenses.html",
+    "metagram_server/templates/home/licenses.hbs",
 ]
 
 [tasks.sqlx]

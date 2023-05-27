@@ -1,6 +1,6 @@
 use clap::Args;
 use fake::{faker::lorem::en as lorem, Dummy, Fake};
-use metagram::{auth, firehose};
+use metagram_server::{auth, firehose};
 use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 use sqlx::{Connection, PgConnection};
 
@@ -94,7 +94,7 @@ async fn seed(mut conn: PgConnection, cmd: Cli) -> anyhow::Result<()> {
 async fn seed_tags(
     conn: &mut PgConnection,
     rng: &mut StdRng,
-    user: &metagram::models::User,
+    user: &metagram_server::models::User,
 ) -> anyhow::Result<Vec<firehose::Tag>> {
     let mut tags = Vec::new();
     for _ in 0..NUM_TAGS {
@@ -109,7 +109,7 @@ async fn seed_tags(
 async fn seed_streams(
     conn: &mut PgConnection,
     rng: &mut StdRng,
-    user: &metagram::models::User,
+    user: &metagram_server::models::User,
     all_tags: &Vec<firehose::Tag>,
 ) -> anyhow::Result<Vec<firehose::CustomStream>> {
     let mut streams = Vec::new();
@@ -133,7 +133,7 @@ async fn seed_streams(
 async fn seed_drops(
     conn: &mut PgConnection,
     rng: &mut StdRng,
-    user: &metagram::models::User,
+    user: &metagram_server::models::User,
     all_tags: &Vec<firehose::Tag>,
 ) -> anyhow::Result<Vec<firehose::Drop>> {
     let mut drops = Vec::new();
@@ -175,7 +175,7 @@ async fn seed_drops(
 async fn seed_hydrants(
     conn: &mut PgConnection,
     rng: &mut StdRng,
-    user: &metagram::models::User,
+    user: &metagram_server::models::User,
     all_tags: &Vec<firehose::Tag>,
 ) -> anyhow::Result<Vec<firehose::Hydrant>> {
     let monthly_feed_url = {
