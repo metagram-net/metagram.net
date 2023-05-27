@@ -99,7 +99,8 @@ async fn main() {
         .await
         .expect("database_pool");
 
-    let worker = metagram_server::queue::Worker::new(database_pool.clone(), Duration::from_secs(60));
+    let worker =
+        metagram_server::queue::Worker::new(database_pool.clone(), Duration::from_secs(60));
 
     let srv = metagram_server::Server::new(metagram_server::ServerConfig {
         auth,
