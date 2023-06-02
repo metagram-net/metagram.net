@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     Router,
 };
-use http::StatusCode;
+use http::{header, HeaderValue, StatusCode};
 
 use crate::{auth::Session, AppState, Context, User};
 
@@ -27,14 +27,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .merge(streams::router())
         .merge(tags::router())
         .merge(whoops::router())
-        .route_layer(middleware::map_response_with_state(state, show_app_error))
+        .route_layer(middleware::map_response_with_state(state, render))
 }
 
-async fn show_app_error(
-    ctx: Context,
-    session: Option<Session>,
-    mut res: Response,
-) -> impl IntoResponse {
+async fn render(ctx: Context, session: Option<Session>, mut res: Response) -> impl IntoResponse {
     let web_error = res.extensions_mut().remove::<Error>();
 
     if let Some(err) = web_error {
@@ -43,7 +39,19 @@ async fn show_app_error(
         return err.render(ctx, session);
     }
 
-    res
+    // Tell the browser not to cache anything.
+    let mut cache_control = vec!["no-cache"];
+
+    // If there's a user logged in, tell the browser to treat all rendered responses as private.
+    // This, combined with "no-cache" and `Clear-Site-Data: "cache"` on logout, _should_ prevent
+    // the browser from showing stale pages after the user logs out.
+    if session.is_some() {
+        cache_control.push("private");
+    }
+
+    let cache_control: HeaderValue = cache_control.join(", ").parse().unwrap();
+
+    ([(header::CACHE_CONTROL, cache_control)], res).into_response()
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

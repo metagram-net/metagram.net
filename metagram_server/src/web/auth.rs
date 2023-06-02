@@ -154,7 +154,14 @@ pub async fn logout(
             let session_id = session.map(|s| s.stytch.session_id);
             tracing::info!({ ?session_id }, "revoked session");
 
-            Ok((cookies, Redirect::to("/")))
+            Ok((
+                cookies,
+                [(
+                    "Clear-Site-Data",
+                    r#""cache", "cookies", "storage", "executionContexts""#,
+                )],
+                Redirect::to("/"),
+            ))
         }
         Err(err) => {
             let session_id = session.as_ref().map(|s| s.stytch.session_id.clone());
