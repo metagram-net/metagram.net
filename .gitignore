@@ -2,5 +2,5 @@
 /dist/js
 /metagram_server/licenses.html
 /node_modules
-/target
+**/target
 /tmp
