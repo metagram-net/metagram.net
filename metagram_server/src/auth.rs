@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use axum::extract::FromRef;
-use axum_csrf::CsrfConfig;
 use axum_extra::extract::PrivateCookieJar;
 use cookie::Cookie;
 use sqlx::{PgExecutor, PgPool};
@@ -50,7 +49,6 @@ where
     PgPool: axum::extract::FromRef<S>,
     Auth: axum::extract::FromRef<S>,
     cookie::Key: axum::extract::FromRef<S>,
-    CsrfConfig: axum::extract::FromRef<S>,
 {
     type Rejection = super::web::Error;
 

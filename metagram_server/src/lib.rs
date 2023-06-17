@@ -45,7 +45,6 @@ pub struct PgConn(sqlx::pool::PoolConnection<sqlx::Postgres>);
 impl<S> axum::extract::FromRequestParts<S> for PgConn
 where
     S: Send + Sync,
-    CsrfConfig: FromRef<S>,
     PgPool: FromRef<S>,
 {
     type Rejection = web::Error;
