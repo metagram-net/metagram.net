@@ -45,11 +45,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
 
-    # Wait until linting is done to reuse the build cache...
-    needs: [lint]
-    # ... but run the tests even if linting fails to avoid PR churn.
-    if: ${{ always() }}
-
     services:
       postgres:
         image: postgres:13
