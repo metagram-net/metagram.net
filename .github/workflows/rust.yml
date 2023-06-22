@@ -31,19 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
       - uses: dtolnay/rust-toolchain@1.70
         with:
           components: clippy
+
+      - uses: Swatinem/rust-cache@v2
 
       - uses: actions-rs/clippy-check@v1
         with:
@@ -80,17 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
       - uses: dtolnay/rust-toolchain@1.70
+
+      - uses: Swatinem/rust-cache@v2
 
       - run: cargo install squill --version 0.4.1
 
