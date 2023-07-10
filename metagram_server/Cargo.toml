@@ -31,7 +31,7 @@ serde = { version = "1.0.164", features = ["derive"] }
 serde_json = "1.0.99"
 sqlx = { version = "0.6.3", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "json", "offline"] }
 stytch = { git = "https://github.com/jdkaplan/stytch-rust", features = ["reqwest"] }
-thiserror = "1.0.40"
+thiserror = "1.0.43"
 tokio = { version = "1.29.1", features = ["full"] }
 tower = "0.4.13"
 tower-http = { version = "0.4.0", features = ["trace", "request-id", "fs", "util"] }
