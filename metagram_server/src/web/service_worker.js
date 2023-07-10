@@ -5,6 +5,4 @@
 self.addEventListener("install", (_event) => null);
 
 // TODO: Actually cache things maybe?
-self.addEventListener("fetch", (event) =>
-  event.respondWith(fetch(event.request))
-);
+self.addEventListener("fetch", (event) => event.respondWith(fetch(event.request)));
