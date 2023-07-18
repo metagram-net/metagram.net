@@ -117,10 +117,7 @@ impl Server {
                 .with_secure(true)
                 .with_http_only(true)
                 .with_cookie_same_site(axum_csrf::SameSite::Strict)
-                // There are two versions of cookie around, and axum-extra's is currently
-                // newer than axum-csrf's. So convert the key from one to the other by re-parsing
-                // the bytes.
-                .with_key(Some(axum_csrf::Key::from(config.cookie_key.master()))),
+                .with_key(Some(config.cookie_key)),
         );
 
         let app = router
