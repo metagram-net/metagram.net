@@ -9,7 +9,7 @@ addr = "0.15.6"
 anyhow = "1.0.72"
 askama = { git = "https://github.com/djc/askama", features = [ "with-axum" ] } # version = 0.11.2
 askama_axum = { git = "https://github.com/djc/askama" } # version = 0.1.0
-async-trait = "0.1.71"
+async-trait = "0.1.72"
 axum = { version = "0.6.18", features = ["headers", "macros"] }
 axum-extra = { version = "0.7.5", features = ["cookie-private", "cookie", "typed-routing", "form"] }
 axum_csrf = "0.6.0"
