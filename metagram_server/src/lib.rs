@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, IntoResponseParts, ResponseParts},
     Router,
 };
-use axum_csrf::{CsrfConfig, CsrfToken};
+use axum_csrf::{CsrfConfig, CsrfLayer, CsrfToken};
 use derivative::Derivative;
 use sqlx::PgPool;
 use std::net::SocketAddr;
@@ -81,7 +81,6 @@ pub struct AppState {
     database_pool: PgPool,
     cookie_key: cookie::Key,
     auth: Auth,
-    csrf_config: CsrfConfig,
 }
 
 impl Server {
@@ -91,15 +90,6 @@ impl Server {
             database_pool: config.database_pool,
             cookie_key: config.cookie_key.clone(),
             auth: config.auth,
-            csrf_config: CsrfConfig::new()
-                .with_cookie_path("/")
-                .with_secure(true)
-                .with_http_only(true)
-                .with_cookie_same_site(axum_csrf::SameSite::Strict)
-                // There are two versions of cookie around, and axum-extra's is currently
-                // newer than axum-csrf's. So convert the key from one to the other by re-parsing
-                // the bytes.
-                .with_key(Some(axum_csrf::Key::from(config.cookie_key.master()))),
         };
 
         let router = Router::new()
@@ -121,6 +111,15 @@ impl Server {
                     .include_headers(true),
             );
 
+        let csrf_layer = CsrfLayer::new(
+            CsrfConfig::new()
+                .with_cookie_path("/")
+                .with_secure(true)
+                .with_http_only(true)
+                .with_cookie_same_site(axum_csrf::SameSite::Strict)
+                .with_key(Some(config.cookie_key)),
+        );
+
         let app = router
             .layer(
                 ServiceBuilder::new()
@@ -130,6 +129,7 @@ impl Server {
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
+            .layer(csrf_layer)
             // Why include the CSRF-protection token on every request instead of just where it's
             // needed?
             //
@@ -185,7 +185,7 @@ impl Context {
         self.csrf_token
             .verify(authenticity_token)
             .map_err(|_| web::Error::CsrfMismatch {
-                cookie: self.csrf_token.authenticity_token(),
+                cookie: self.csrf_token.authenticity_token().unwrap_or_default(),
                 form: authenticity_token.to_string(),
             })
     }
@@ -195,7 +195,6 @@ impl Context {
 impl<S> axum::extract::FromRequestParts<S> for Context
 where
     S: Send + Sync,
-    CsrfConfig: FromRef<S>,
 {
     type Rejection = std::convert::Infallible;
 
@@ -209,7 +208,7 @@ where
 
         let csrf_token = CsrfToken::from_request_parts(parts, state)
             .await
-            .expect("layer: CsrfToken");
+            .expect("layer: CsrfLayer");
 
         let request_id = parts
             .headers
@@ -217,9 +216,13 @@ where
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
+        let authenticity_token = csrf_token
+            .authenticity_token()
+            .expect("hashing failure, internal server error");
+
         let ctx = Self {
-            csrf_token: csrf_token.clone(),
-            authenticity_token: csrf_token.authenticity_token(),
+            csrf_token,
+            authenticity_token,
             request_id,
         };
 
