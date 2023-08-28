@@ -24,7 +24,7 @@ http = "0.2.9"
 hyper = "0.14.27"
 lazy_static = "1.4.0"
 rand = "0.8.5"
-regex = "1.9.3"
+regex = "1.9.4"
 reqwest = "0.11.18"
 rss = "2.0.5"
 serde = { version = "1.0.185", features = ["derive"] }
