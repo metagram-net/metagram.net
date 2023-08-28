@@ -19,7 +19,7 @@ clap = { version = "4.3.21", features = ["derive"] }
 cookie = { version = "0.17.0", features = ["private"] }
 derivative = "2.2.0"
 envy = "0.4.2"
-fake = "2.6.1"
+fake = "2.8.0"
 http = "0.2.9"
 hyper = "0.14.27"
 lazy_static = "1.4.0"
