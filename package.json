@@ -9,7 +9,7 @@
     "lint": "eslint js metagram_server/src"
   },
   "dependencies": {
-    "jquery": "^3.7.0",
+    "jquery": "^3.7.1",
     "select2": "^4.0.13"
   },
   "devDependencies": {
