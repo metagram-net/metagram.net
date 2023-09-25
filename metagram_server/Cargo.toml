@@ -11,7 +11,7 @@ askama = { git = "https://github.com/djc/askama", features = [ "with-axum" ] } #
 askama_axum = { git = "https://github.com/djc/askama" } # version = 0.1.0
 async-trait = "0.1.73"
 axum = { version = "0.6.20", features = ["headers", "macros"] }
-axum-extra = { version = "0.7.7", features = ["cookie-private", "cookie", "typed-routing", "form"] }
+axum-extra = { version = "0.8.0", features = ["cookie-private", "cookie", "typed-routing", "form"] }
 axum_csrf = { version = "0.7.2", features = ["layer"] }
 base64 = "0.21.3"
 chrono = { version = "0.4.31", features = ["serde"], default-features = false }
