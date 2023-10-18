@@ -649,8 +649,8 @@ impl Stream {
 }
 
 pub fn status_streams() -> Vec<StatusStream> {
-    let statuses = vec![DropStatus::Unread, DropStatus::Read, DropStatus::Saved];
-    statuses.iter().cloned().map(StatusStream::new).collect()
+    let statuses = [DropStatus::Unread, DropStatus::Read, DropStatus::Saved];
+    statuses.into_iter().map(StatusStream::new).collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
