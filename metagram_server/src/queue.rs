@@ -25,9 +25,10 @@ impl Worker {
 
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) -> Result<(), JoinError> {
         let mut interval = tokio::time::interval(self.interval);
-        let mut found_job = true;
 
         tokio::spawn(async move {
+            let mut found_job = true;
+
             loop {
                 // If the queue was empty last time we polled it (or polling resulted in an error),
                 // wait a bit to avoid just constantly polling.
