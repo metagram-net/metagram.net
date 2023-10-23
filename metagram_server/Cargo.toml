@@ -35,7 +35,7 @@ thiserror = "1.0.50"
 tokio = { version = "1.32.0", features = ["full"] }
 tower = "0.4.13"
 tower-http = { version = "0.4.0", features = ["trace", "request-id", "fs", "util"] }
-tracing = "0.1.39"
+tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter", "json"] }
 typetag = "0.2.13"
 url = "2.4.1"
