@@ -129,14 +129,14 @@ impl Server {
                     .layer(trace_layer)
                     .propagate_x_request_id(),
             )
-            .layer(csrf_layer)
             // Why include the CSRF-protection token on every request instead of just where it's
             // needed?
             //
             // When the user is logged in, every page (even error pages) contains a logout
             // form that would require doing this anyway. If there's no logged-in user, they're
             // probably at the login page, which is also a form!
-            .layer(axum::middleware::from_fn_with_state(state, auto_csrf_token));
+            .layer(axum::middleware::from_fn_with_state(state, auto_csrf_token))
+            .layer(csrf_layer);
 
         Ok(Self { app })
     }
