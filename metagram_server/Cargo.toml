@@ -15,7 +15,7 @@ axum-extra = { version = "0.8.0", features = ["cookie-private", "cookie", "typed
 axum_csrf = { version = "0.7.2", features = ["layer"] }
 base64 = "0.21.4"
 chrono = { version = "0.4.31", features = ["serde"], default-features = false }
-clap = { version = "4.4.6", features = ["derive"] }
+clap = { version = "4.4.7", features = ["derive"] }
 cookie = { version = "0.17.0", features = ["private"] }
 derivative = "2.2.0"
 envy = "0.4.2"
