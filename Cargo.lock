@@ -305,7 +305,7 @@ dependencies = [
  "axum-core",
  "axum-macros",
  "bytes",
- "cookie",
+ "cookie 0.17.0",
  "form_urlencoded",
  "futures-util",
  "http",
@@ -342,7 +342,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "axum-core",
- "cookie",
+ "cookie 0.17.0",
  "http",
  "rand",
  "thiserror",
@@ -528,6 +528,20 @@ dependencies = [
  "percent-encoding",
  "rand",
  "sha2",
+ "subtle",
+ "time",
+ "version_check",
+]
+
+[[package]]
+name = "cookie"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cd91cf61412820176e137621345ee43b3f4423e589e7ae4e50d601d93e35ef8"
+dependencies = [
+ "aes-gcm",
+ "base64 0.21.5",
+ "rand",
  "subtle",
  "time",
  "version_check",
@@ -1327,7 +1341,7 @@ dependencies = [
  "base64 0.21.5",
  "chrono",
  "clap",
- "cookie",
+ "cookie 0.18.0",
  "derivative",
  "envy",
  "fake",
