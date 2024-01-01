@@ -190,7 +190,7 @@ pub async fn show(
 ) -> super::Result<impl IntoResponse> {
     let id = parse_tag_id(&id)?;
     let tag = firehose::find_tag(&mut conn, &session.user, id).await?;
-    let drops = load_tag_drops(&mut conn, &session.user, tag.clone()).await?;
+    let drops = load_tag_drops(&mut conn, &session.user, tag.clone(), 8).await?;
 
     Ok(Show {
         context,
@@ -212,6 +212,7 @@ async fn load_tag_drops(
     conn: &mut PgConnection,
     user: &User,
     tag: Tag,
+    unread_limit: i64,
 ) -> anyhow::Result<TagDrops> {
     let unread_drops = firehose::list_drops(
         &mut *conn,
@@ -220,6 +221,7 @@ async fn load_tag_drops(
             tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Unread),
         },
+        Some(unread_limit),
     )
     .await?;
 
@@ -230,6 +232,7 @@ async fn load_tag_drops(
             tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Read),
         },
+        None,
     )
     .await?;
 
@@ -240,6 +243,7 @@ async fn load_tag_drops(
             tags: Some(vec![tag.clone()]),
             status: Some(firehose::DropStatus::Saved),
         },
+        None,
     )
     .await?;
 
