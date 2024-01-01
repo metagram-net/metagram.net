@@ -222,26 +222,37 @@ struct ShowPage {
     drops: Vec<firehose::Drop>,
 }
 
+const DEFAULT_DROP_LIMIT: i64 = 32;
+
 pub async fn show(
     Member { id }: Member,
     context: Context,
     session: Session,
     PgConn(mut db): PgConn,
 ) -> super::Result<impl IntoResponse> {
-    let stream: firehose::Stream = match id.as_str() {
-        "unread" => Ok(firehose::Stream::Status(firehose::StatusStream {
-            status: DropStatus::Unread,
-        })),
-        "read" => Ok(firehose::Stream::Status(firehose::StatusStream {
-            status: DropStatus::Read,
-        })),
-        "saved" => Ok(firehose::Stream::Status(firehose::StatusStream {
-            status: DropStatus::Saved,
-        })),
+    let (stream, limit): (firehose::Stream, Option<i64>) = match id.as_str() {
+        "unread" => Ok((
+            firehose::Stream::Status(firehose::StatusStream {
+                status: DropStatus::Unread,
+            }),
+            Some(DEFAULT_DROP_LIMIT),
+        )),
+        "read" => Ok((
+            firehose::Stream::Status(firehose::StatusStream {
+                status: DropStatus::Read,
+            }),
+            None,
+        )),
+        "saved" => Ok((
+            firehose::Stream::Status(firehose::StatusStream {
+                status: DropStatus::Saved,
+            }),
+            None,
+        )),
 
         id => firehose::find_stream(&mut db, &session.user, parse_stream_id(id)?)
             .await
-            .map(firehose::Stream::Custom),
+            .map(|c| (firehose::Stream::Custom(c), Some(DEFAULT_DROP_LIMIT))),
     }?;
 
     let mut filters = stream.filters();
@@ -251,7 +262,7 @@ pub async fn show(
         filters.status = Some(DropStatus::Unread);
     }
 
-    let drops = firehose::list_drops(&mut db, &session.user, filters).await?;
+    let drops = firehose::list_drops(&mut db, &session.user, filters, limit).await?;
 
     Ok(ShowPage {
         context,

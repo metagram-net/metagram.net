@@ -148,11 +148,12 @@ pub async fn list_drops(
     conn: impl PgExecutor<'_>,
     user: &models::User,
     filters: DropFilters,
+    limit: Option<i64>,
 ) -> anyhow::Result<Vec<Drop>> {
     let mut query = QueryBuilder::new(
         "
         with drop_ids as (
-          select drops.id
+          select distinct(drops.id)
           from drops
           left join drop_tags on drop_tags.drop_id = drops.id
           left join tags on tags.id = drop_tags.tag_id
@@ -173,6 +174,10 @@ pub async fn list_drops(
         query.push(" and tags.id = ANY(");
         query.push_bind(tag_ids);
         query.push(")");
+    }
+    if let Some(limit) = limit {
+        query.push("limit ");
+        query.push_bind(limit);
     }
     query.push(") "); // with
 
@@ -1624,6 +1629,7 @@ mod tests {
                 status: Some(DropStatus::Unread),
                 ..Default::default()
             },
+            Some(100),
         )
         .await
         .unwrap();
@@ -1691,6 +1697,7 @@ mod tests {
                     tags: Some(vec![tags[i].clone()]),
                     ..Default::default()
                 },
+                Some(100),
             )
             .await
             .unwrap();
@@ -2184,6 +2191,7 @@ mod tests {
                 status: Some(DropStatus::Unread),
                 ..Default::default()
             },
+            Some(100),
         )
         .await
         .unwrap();
@@ -2236,6 +2244,7 @@ mod tests {
                     status: Some(DropStatus::Unread),
                     ..Default::default()
                 },
+                Some(100),
             )
             .await
             .unwrap();
