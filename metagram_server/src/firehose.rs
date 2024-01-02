@@ -153,7 +153,9 @@ pub async fn list_drops(
     let mut query = QueryBuilder::new(
         "
         with drop_ids as (
-          select distinct(drops.id)
+          select
+              distinct(drops.id) as id
+            , drops.moved_at as moved_at
           from drops
           left join drop_tags on drop_tags.drop_id = drops.id
           left join tags on tags.id = drop_tags.tag_id
@@ -175,8 +177,15 @@ pub async fn list_drops(
         query.push_bind(tag_ids);
         query.push(")");
     }
+    query.push(
+        "
+        order by
+            drops.moved_at asc
+          , drops.id asc
+        ",
+    );
     if let Some(limit) = limit {
-        query.push("limit ");
+        query.push(" limit ");
         query.push_bind(limit);
     }
     query.push(") "); // with
@@ -1629,7 +1638,7 @@ mod tests {
                 status: Some(DropStatus::Unread),
                 ..Default::default()
             },
-            Some(100),
+            None,
         )
         .await
         .unwrap();
