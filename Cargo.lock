@@ -1392,7 +1392,7 @@ dependencies = [
  "derivative",
  "envy",
  "fake",
- "http 0.2.10",
+ "http 1.0.0",
  "hyper 1.2.0",
  "lazy_static",
  "rand",
