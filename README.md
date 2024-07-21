@@ -2,6 +2,30 @@
 
 All the code for [metagram.net](https://metagram.net)
 
+---
+
+## Archive
+
+This project has given me so many years of learning, but it's time for it to
+finally come to an end. It turns out that a combination of [linkding] and
+[Miniflux] is already way better than what I had planned to build for Firehose,
+so that's what I'm using now.
+
+This project evolved from Go microservices to a Rails modular-monolith to a
+giant pile of Rust code. Deployment moved out of ephemeral containers on a
+[DigitalOcean] VM onto the VM itself, and then became a set of [Fly.io]
+machines. Everything was always Postgres the whole time 😉
+
+If you find yourself wanting to ask me questions about the code you find in
+here (or anything else related to this), please email me!
+
+[DigitalOcean]: https://www.digitalocean.com
+[Fly.io]: https://fly.io
+[linkding]: https://github.com/sissbruecker/linkding
+[Miniflux]: https://miniflux.app
+
+---
+
 ## What is this?
 
 Metagram is my web development playground. I someday dream of having a network
